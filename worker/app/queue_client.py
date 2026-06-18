@@ -2,6 +2,7 @@ import os
 import redis
 
 from app.models import Job
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 
 class LocalQueueClient:
@@ -18,8 +19,16 @@ class RedisQueueClient:
         )
         self.queue_name = os.getenv("REDIS_QUEUE_NAME", "jobs")
 
-    def get_next_job(self) -> Job:
-        _, job_id = self.redis.brpop(self.queue_name)
+    def get_next_job(self) -> Job | None:
+        try:
+            result = self.redis.brpop(self.queue_name, timeout=5)
+        except RedisTimeoutError:
+            return None
+
+        if result is None:
+            return None
+
+        _, job_id = result
         return Job(job_id=job_id)
 
     def push_job(self, job_id: str) -> None:

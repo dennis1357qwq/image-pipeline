@@ -16,6 +16,10 @@ class Worker:
 
     def run_once(self) -> None:
         job = self.queue.get_next_job()
+
+        if job is None:
+            return
+
         print(f"Picked job: {job.job_id}")
 
         try:
