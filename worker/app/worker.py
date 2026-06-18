@@ -5,7 +5,7 @@ from PIL import Image
 from app.image_processor import process_image
 from app.job_repository import LocalJobRepository
 from app.queue_client import LocalQueueClient, RedisQueueClient
-from app.storage_client import LocalStorageClient
+from app.storage_client import LocalStorageClient, ObjectStorageClient
 
 
 class Worker:
@@ -43,6 +43,6 @@ if __name__ == "__main__":
     worker = Worker(
         queue=RedisQueueClient(),
         job_repository=LocalJobRepository(),
-        storage=LocalStorageClient(),
+        storage=ObjectStorageClient(),
     )
     worker.run_forever()

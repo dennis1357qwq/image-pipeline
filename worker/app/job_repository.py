@@ -16,8 +16,8 @@ class LocalJobRepository:
         return JobMetadata(
             job_id=job_id,
             operation=operation,
-            input_key="examples/test.png",
-            output_key=f"output/{job_id}_{operation}.png",
+            input_key="originals/job-1/input.png",
+            output_key=f"results/{job_id}/{operation}.png",
         )
 
     def mark_done(self, job_id: str) -> None:
