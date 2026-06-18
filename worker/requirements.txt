@@ -1,3 +1,4 @@
 Pillow
 redis
 boto3
+psycopg[binary]
