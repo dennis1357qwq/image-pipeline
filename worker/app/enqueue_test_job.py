@@ -1,4 +1,4 @@
-from app.queue_client import RedisQueueClient
+from image_pipeline_common.queue_client import RedisQueueClient
 
 if __name__ == "__main__":
     queue = RedisQueueClient()

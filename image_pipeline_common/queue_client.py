@@ -1,7 +1,7 @@
 import os
 import redis
 
-from app.models import Job
+from image_pipeline_common.models import Job
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
 

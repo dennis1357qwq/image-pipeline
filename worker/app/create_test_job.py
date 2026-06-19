@@ -1,9 +1,9 @@
 from pathlib import Path
 import uuid
 
-from app.job_repository import PostgresJobRepository
-from app.queue_client import RedisQueueClient
-from app.storage_client import ObjectStorageClient
+from image_pipeline_common.job_repository import PostgresJobRepository
+from image_pipeline_common.queue_client import RedisQueueClient
+from image_pipeline_common.storage_client import ObjectStorageClient
 
 
 if __name__ == "__main__":

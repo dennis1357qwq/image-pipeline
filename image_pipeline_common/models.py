@@ -10,3 +10,4 @@ class JobMetadata:
     operation: str
     input_key: str
     output_key: str
+    status: str

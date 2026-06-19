@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.storage_client import ObjectStorageClient
+from image_pipeline_common.storage_client import ObjectStorageClient
 
 
 if __name__ == "__main__":

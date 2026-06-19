@@ -3,9 +3,9 @@ from io import BytesIO
 from PIL import Image
 
 from app.image_processor import process_image
-from app.job_repository import LocalJobRepository, PostgresJobRepository
-from app.queue_client import LocalQueueClient, RedisQueueClient
-from app.storage_client import LocalStorageClient, ObjectStorageClient
+from image_pipeline_common.job_repository import LocalJobRepository, PostgresJobRepository
+from image_pipeline_common.queue_client import LocalQueueClient, RedisQueueClient
+from image_pipeline_common.storage_client import LocalStorageClient, ObjectStorageClient
 
 
 class Worker:

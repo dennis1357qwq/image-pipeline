@@ -4,10 +4,11 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY worker/requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app ./app
+COPY worker/app ./app
+COPY image_pipeline_common ./image_pipeline_common
 
 CMD ["python", "-m", "app.worker"]

@@ -1,43 +1,17 @@
-import os
 import uuid
-from io import BytesIO
 
-import boto3
-import psycopg
-import redis
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Response
+
+from image_pipeline_common.job_repository import PostgresJobRepository
+from image_pipeline_common.queue_client import RedisQueueClient
+from image_pipeline_common.storage_client import ObjectStorageClient
 
 
 app = FastAPI()
 
-
-OBJECT_STORAGE_BUCKET = os.getenv("OBJECT_STORAGE_BUCKET", "image-pipeline")
-REDIS_QUEUE_NAME = os.getenv("REDIS_QUEUE_NAME", "jobs")
-
-
-s3_client = boto3.client(
-    "s3",
-    endpoint_url=os.getenv("OBJECT_STORAGE_ENDPOINT", "http://localhost:9000"),
-    aws_access_key_id=os.getenv("OBJECT_STORAGE_ACCESS_KEY", "minioadmin"),
-    aws_secret_access_key=os.getenv("OBJECT_STORAGE_SECRET_KEY", "minioadmin"),
-)
-
-redis_client = redis.Redis(
-    host=os.getenv("REDIS_HOST", "localhost"),
-    port=int(os.getenv("REDIS_PORT", "6379")),
-    decode_responses=True,
-)
-
-
-def get_db_connection():
-    return psycopg.connect(
-        host=os.getenv("POSTGRES_HOST", "localhost"),
-        port=int(os.getenv("POSTGRES_PORT", "5432")),
-        dbname=os.getenv("POSTGRES_DB", "image_pipeline"),
-        user=os.getenv("POSTGRES_USER", "postgres"),
-        password=os.getenv("POSTGRES_PASSWORD", "postgres"),
-    )
-
+storage = ObjectStorageClient()
+job_repository = PostgresJobRepository()
+queue = RedisQueueClient()
 
 @app.get("/health")
 def health():
@@ -60,29 +34,19 @@ async def create_job(
 
     image_bytes = await file.read()
 
-    s3_client.upload_fileobj(
-        Fileobj=BytesIO(image_bytes),
-        Bucket=OBJECT_STORAGE_BUCKET,
-        Key=input_key,
+    storage.upload(
+        key=input_key,
+        data=image_bytes,
     )
 
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO jobs (
-                    job_id,
-                    operation,
-                    input_key,
-                    output_key,
-                    status
-                )
-                VALUES (%s, %s, %s, %s, %s)
-                """,
-                (job_id, operation, input_key, output_key, "PENDING"),
-            )
+    job_repository.create_job(
+        job_id=job_id,
+        operation=operation,
+        input_key=input_key,
+        output_key=output_key,
+    )
 
-    redis_client.lpush(REDIS_QUEUE_NAME, job_id)
+    queue.push_job(job_id)
 
     return {
         "job_id": job_id,
@@ -93,57 +57,33 @@ async def create_job(
 
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str):
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT job_id, operation, input_key, output_key, status
-                FROM jobs
-                WHERE job_id = %s
-                """,
-                (job_id,),
-            )
-            row = cur.fetchone()
-
-    if row is None:
+    try:
+        metadata = job_repository.get_job(job_id)
+    except ValueError:
         raise HTTPException(status_code=404, detail="Job not found")
 
     return {
-        "job_id": row[0],
-        "operation": row[1],
-        "input_key": row[2],
-        "output_key": row[3],
-        "status": row[4],
+        "job_id": metadata.job_id,
+        "operation": metadata.operation,
+        "input_key": metadata.input_key,
+        "output_key": metadata.output_key,
+        "status": metadata.status,
     }
 
 @app.get("/jobs/{job_id}/result")
 def get_job_result(job_id: str):
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT output_key, status
-                FROM jobs
-                WHERE job_id = %s
-                """,
-                (job_id,),
-            )
-            row = cur.fetchone()
-
-    if row is None:
+    try:
+        metadata = job_repository.get_job(job_id)
+    except ValueError:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    output_key, status = row
+    if metadata.status != "DONE":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job is not done yet: {metadata.status}",
+        )
 
-    if status != "DONE":
-        raise HTTPException(status_code=409, detail=f"Job is not done yet: {status}")
-
-    response = s3_client.get_object(
-        Bucket=OBJECT_STORAGE_BUCKET,
-        Key=output_key,
-    )
-
-    image_bytes = response["Body"].read()
+    image_bytes = storage.download(metadata.output_key)
 
     return Response(
         content=image_bytes,

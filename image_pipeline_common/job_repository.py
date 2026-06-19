@@ -1,7 +1,7 @@
 import os
 import psycopg
 
-from app.models import JobMetadata
+from image_pipeline_common.models import JobMetadata
 
 
 class LocalJobRepository:
@@ -68,7 +68,7 @@ class PostgresJobRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT job_id, operation, input_key, output_key
+                    SELECT job_id, operation, input_key, output_key, status
                     FROM jobs
                     WHERE job_id = %s
                     """,
@@ -84,6 +84,7 @@ class PostgresJobRepository:
             operation=row[1],
             input_key=row[2],
             output_key=row[3],
+            status=row[4],
         )
 
     def mark_processing(self, job_id: str) -> None:
