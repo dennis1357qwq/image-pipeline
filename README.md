@@ -135,3 +135,6 @@ This separation enables independent scaling of services and keeps individual com
 # Further Documentation
 
 Additional developer documentation, local development instructions, and infrastructure details can be found in the `docs/` directory.
+
+- [Architecture](docs/architecture.md)
+- [Development Guide](docs/development.md)
