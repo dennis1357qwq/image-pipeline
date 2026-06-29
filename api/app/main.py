@@ -1,7 +1,9 @@
 import os
 import uuid
+import logging
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Response
+from redis.exceptions import RedisError
 
 from image_pipeline_common.job_repository import PostgresJobRepository
 from image_pipeline_common.queue_client import RedisQueueClient
@@ -15,6 +17,8 @@ job_repository = PostgresJobRepository()
 queue = RedisQueueClient()
 
 MAX_QUEUE_LENGTH = int(os.getenv("MAX_QUEUE_LENGTH", "100"))
+
+logger = logging.getLogger(__name__)
 
 @app.get("/health")
 def health():
@@ -55,7 +59,16 @@ async def create_job(
         output_key=output_key,
     )
 
-    queue.push_job(job_id)
+    try:
+        queue.push_job(job_id)
+    except RedisError as error:
+        job_repository.mark_failed(job_id)
+        logger.exception("Failed to enqueue job %s", job_id)
+
+        raise HTTPException(
+            status_code=503,
+            detail="Job could not be queued. Please retry later.",
+        )
 
     return {
         "job_id": job_id,
