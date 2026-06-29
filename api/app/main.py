@@ -1,3 +1,4 @@
+import os
 import uuid
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Response
@@ -13,6 +14,8 @@ storage = ObjectStorageClient()
 job_repository = PostgresJobRepository()
 queue = RedisQueueClient()
 
+MAX_QUEUE_LENGTH = int(os.getenv("MAX_QUEUE_LENGTH", "100"))
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -27,6 +30,12 @@ async def create_job(
 
     if operation not in allowed_operations:
         raise HTTPException(status_code=400, detail="Unknown operation")
+    
+    if queue.length() >= MAX_QUEUE_LENGTH:
+        raise HTTPException(
+            status_code=429,
+            detail="Queue capacity reached. Please retry later.",
+        )
 
     job_id = str(uuid.uuid4())
     input_key = f"originals/{job_id}/{file.filename}"
