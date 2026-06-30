@@ -1,30 +1,55 @@
 import os
 import psycopg
 
-from image_pipeline_common.models import JobMetadata
+from image_pipeline_common.models import JobMetadata, PipelineStep
+from psycopg.types.json import Json
+
+
+def _pipeline_to_json(pipeline: list[PipelineStep]) -> list[dict]:
+    return [
+        {
+            "operation": step.operation,
+            "parameters": step.parameters,
+        }
+        for step in pipeline
+    ]
+
+
+def _pipeline_from_json(data: list[dict]) -> list[PipelineStep]:
+    return [
+        PipelineStep(
+            operation=item["operation"],
+            parameters=item.get("parameters", {}),
+        )
+        for item in data
+    ]
 
 
 class LocalJobRepository:
     def get_job(self, job_id: str) -> JobMetadata:
-        operations = {
-            "job-1": "grayscale",
-            "job-2": "thumbnail",
-            "job-3": "blur",
-            "job-4": "grayscale",
-            "job-5": "blur",
-        }
-
-        operation = operations.get(job_id, "grayscale")
+        pipeline = [
+            PipelineStep(
+                operation="grayscale",
+                parameters={},
+            )
+        ]
 
         return JobMetadata(
             job_id=job_id,
-            operation=operation,
+            pipeline=pipeline,
             input_key="originals/job-1/input.png",
-            output_key=f"results/{job_id}/{operation}.png",
+            output_key=f"results/{job_id}/result.png",
+            status="PENDING",
         )
+
+    def mark_processing(self, job_id: str) -> None:
+        print(f"{job_id} processing")
 
     def mark_done(self, job_id: str) -> None:
         print(f"{job_id} finished")
+
+    def mark_failed(self, job_id: str) -> None:
+        print(f"{job_id} failed")
 
 
 class PostgresJobRepository:
@@ -43,7 +68,7 @@ class PostgresJobRepository:
     def create_job(
         self,
         job_id: str,
-        operation: str,
+        pipeline: list[PipelineStep],
         input_key: str,
         output_key: str,
     ) -> None:
@@ -53,14 +78,20 @@ class PostgresJobRepository:
                     """
                     INSERT INTO jobs (
                         job_id,
-                        operation,
+                        pipeline,
                         input_key,
                         output_key,
                         status
                     )
                     VALUES (%s, %s, %s, %s, %s)
                     """,
-                    (job_id, operation, input_key, output_key, "PENDING"),
+                    (
+                        job_id,
+                        Json(_pipeline_to_json(pipeline)),
+                        input_key,
+                        output_key,
+                        "PENDING",
+                    ),
                 )
 
     def get_job(self, job_id: str) -> JobMetadata:
@@ -68,7 +99,7 @@ class PostgresJobRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT job_id, operation, input_key, output_key, status
+                    SELECT job_id, pipeline, input_key, output_key, status
                     FROM jobs
                     WHERE job_id = %s
                     """,
@@ -81,7 +112,7 @@ class PostgresJobRepository:
 
         return JobMetadata(
             job_id=row[0],
-            operation=row[1],
+            pipeline=_pipeline_from_json(row[1]),
             input_key=row[2],
             output_key=row[3],
             status=row[4],
