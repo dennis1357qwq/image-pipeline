@@ -1,6 +1,6 @@
 # Development Guide
 
-This document contains useful information for local development, testing, and debugging of the Image Processing Pipeline.
+This document contains useful information for local development, testing, benchmarking, and debugging of the Image Processing Pipeline.
 
 ---
 
@@ -11,21 +11,24 @@ image-pipeline/
 ├── api/                     # FastAPI service
 ├── worker/                  # Background worker
 ├── image_pipeline_common/   # Shared clients and models
+├── benchmark/               # Benchmark definitions
+├── scripts/                 # Utility scripts
 ├── infra/                   # Docker Compose and infrastructure
-└── docs/                    # Project documentation
+├── docs/                    # Documentation
+└── results/                 # Benchmark and experiment results
 ```
 
 ---
 
 # Running the Infrastructure
 
-To start the required infrastructure components (Redis, PostgreSQL, MinIO, API, Worker):
+To start the complete infrastructure (Redis, PostgreSQL, MinIO, API, and Worker):
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml up --build
 ```
 
-To run the services in the background:
+Run everything in the background:
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml up -d --build
@@ -41,25 +44,31 @@ docker compose -f infra/docker/docker-compose.yml down
 
 # Useful Docker Commands
 
-View logs:
+View logs of all services:
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml logs -f
 ```
 
-Restart a single service:
+View logs of a single service:
+
+```bash
+docker compose -f infra/docker/docker-compose.yml logs -f worker
+```
+
+Restart a service:
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml restart worker
 ```
 
-Rebuild and restart a single service:
+Rebuild and recreate a service:
 
 ```bash
-docker compose -f infra/docker/docker-compose.yml up --build worker
+docker compose -f infra/docker/docker-compose.yml up --build --force-recreate worker
 ```
 
-Stop a single service:
+Stop a service:
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml stop worker
@@ -93,19 +102,70 @@ source .venv/bin/activate
 PYTHONPATH=.. python3 -m app.worker
 ```
 
-The `PYTHONPATH=..` setting ensures that the shared package `image_pipeline_common` can be imported when running services outside Docker.
+The `PYTHONPATH=..` setting allows both services to import the shared package `image_pipeline_common`.
 
 ---
 
-# Testing the System
+# End-to-End Testing
 
-The recommended end-to-end workflow is:
+The recommended workflow is:
 
-1. Start the system.
-2. Open Swagger UI at `http://localhost:8000/docs`.
-3. Submit a `POST /jobs` request with an image and an operation.
-4. Poll `GET /jobs/{job_id}` until the status becomes `DONE`.
-5. Retrieve the processed image via `GET /jobs/{job_id}/result`.
+1. Start the infrastructure.
+2. Open Swagger UI.
+3. Submit a `POST /jobs` request.
+4. Upload an image.
+5. Configure the processing pipeline.
+6. Execute the request.
+7. Poll `GET /jobs/{job_id}` until the status becomes `DONE`.
+8. Download the processed image using `GET /jobs/{job_id}/result`.
+
+---
+
+# Benchmarking
+
+The project contains a standalone benchmark utility for measuring the computational cost of different processing pipelines.
+
+The benchmark executes predefined workloads multiple times and records wall-clock and CPU execution times.
+
+Example:
+
+```bash
+PYTHONPATH=.:worker python3 scripts/benchmark_operations.py \
+    --image worker/examples/test.png \
+    --iterations 20 \
+    --warmup 3 \
+    --shuffle \
+    --output results/local/operation-benchmark.csv
+```
+
+## Benchmark Parameters
+
+| Parameter      | Description                                           |
+| -------------- | ----------------------------------------------------- |
+| `--image`      | Input image used for benchmarking                     |
+| `--iterations` | Number of measured executions                         |
+| `--warmup`     | Warm-up executions excluded from measurements         |
+| `--shuffle`    | Randomizes benchmark order to reduce ordering effects |
+| `--output`     | Output CSV file                                       |
+
+Warm-up iterations reduce initialization overhead, while randomized execution order helps minimize systematic bias caused by cache effects or CPU frequency scaling.
+
+Benchmark results should **not** be committed to the repository because they depend on the local hardware and execution environment.
+
+---
+
+# Benchmark Results
+
+The repository contains the following directories for benchmark results:
+
+```text
+results/
+├── local/
+├── docker/
+└── gcp/
+```
+
+These directories are intended for measurements collected in different environments during scalability experiments.
 
 ---
 
@@ -124,7 +184,7 @@ The recommended end-to-end workflow is:
 
 # Shared Code
 
-The package `image_pipeline_common` contains shared implementations used by both the API and the worker.
+The `image_pipeline_common` package contains shared implementations used by both the API and the worker.
 
 It currently provides:
 
@@ -132,46 +192,57 @@ It currently provides:
 - PostgreSQL job repository
 - Object storage client
 - Shared data models
+- Pipeline models
 
-This avoids duplicated logic and keeps the behaviour of both services consistent.
+This avoids duplicated infrastructure logic and ensures consistent behaviour across services.
 
 ---
 
 # Troubleshooting
 
-## Import errors for `image_pipeline_common`
+## Import Errors
 
-When running services locally, make sure to include:
+When running services locally, ensure that the project root is included in the Python path.
+
+For example:
 
 ```bash
 PYTHONPATH=..
 ```
 
-before the execution command.
+or for benchmark scripts:
 
-## Changes are not reflected inside Docker
+```bash
+PYTHONPATH=.:worker
+```
+
+---
+
+## Changes Are Not Reflected Inside Docker
 
 Rebuild the affected service:
 
 ```bash
-docker compose -f infra/docker/docker-compose.yml up --build <service>
+docker compose -f infra/docker/docker-compose.yml up --build --force-recreate <service>
 ```
 
-or rebuild the entire project:
+or rebuild the complete project:
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml up --build
 ```
 
-## Viewing logs
+---
 
-To inspect all running services:
+## Viewing Logs
+
+Inspect logs of all running services:
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml logs -f
 ```
 
-To inspect only a single service:
+Inspect a single service:
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml logs -f worker
