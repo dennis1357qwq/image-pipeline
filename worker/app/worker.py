@@ -31,7 +31,7 @@ class Worker:
             input_bytes = self.storage.download(metadata.input_key)
 
             with Image.open(BytesIO(input_bytes)) as image:
-                result_image = process_image(image=image, operation=metadata.operation)
+                result_image = process_image(image=image, pipeline=metadata.pipeline)
 
             output_buffer = BytesIO()
             result_image.save(output_buffer, format="PNG")
