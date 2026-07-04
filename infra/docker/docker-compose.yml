@@ -17,7 +17,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: image_pipeline
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - ../postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
 
@@ -68,6 +68,8 @@ services:
       OBJECT_STORAGE_BUCKET: image-pipeline
       OBJECT_STORAGE_ACCESS_KEY: minioadmin
       OBJECT_STORAGE_SECRET_KEY: minioadmin
+
+      MAX_QUEUE_LENGTH: 100 # Development default, needs to be adjusted empirically
     depends_on:
       - redis
       - postgres
