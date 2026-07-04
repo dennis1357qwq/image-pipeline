@@ -14,6 +14,15 @@ from image_pipeline_common.storage_client import ObjectStorageClient
 
 app = FastAPI()
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 storage = ObjectStorageClient()
 job_repository = PostgresJobRepository()
 queue = RedisQueueClient()
@@ -34,6 +43,7 @@ def parse_pipeline(pipeline_json: str) -> list[PipelineStep]:
         "thumbnail",
         "blur",
         "rotate",
+        "face_blur",
         "sharpen",
         "contrast",
         "emboss",
