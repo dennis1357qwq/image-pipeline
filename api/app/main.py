@@ -3,7 +3,7 @@ import os
 import uuid
 import logging
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Response
+from fastapi import FastAPI, File, Header, Form, HTTPException, UploadFile, Response
 from redis.exceptions import RedisError
 
 from image_pipeline_common.job_repository import PostgresJobRepository
@@ -109,8 +109,19 @@ def pipeline_to_response(pipeline: list[PipelineStep]) -> list[dict]:
 async def create_job(
     pipeline: str = Form(...),
     file: UploadFile = File(...),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     parsed_pipeline = parse_pipeline(pipeline)
+
+    # Check idempotency key
+    if idempotency_key:
+        existing = job_repository.get_job_by_idempotency_key(idempotency_key)
+        if existing:
+            return {
+                "job_id": existing.job_id,
+                "status": existing.status,
+                "pipeline": pipeline_to_response(existing.pipeline),
+            }
 
     if queue.length() >= MAX_QUEUE_LENGTH:
         raise HTTPException(
@@ -124,16 +135,14 @@ async def create_job(
 
     image_bytes = await file.read()
 
-    storage.upload(
-        key=input_key,
-        data=image_bytes,
-    )
+    storage.upload(key=input_key, data=image_bytes)
 
     job_repository.create_job(
         job_id=job_id,
         pipeline=parsed_pipeline,
         input_key=input_key,
         output_key=output_key,
+        idempotency_key=idempotency_key,
     )
 
     try:
@@ -141,7 +150,6 @@ async def create_job(
     except RedisError:
         job_repository.mark_failed(job_id)
         logger.exception("Failed to enqueue job %s", job_id)
-
         raise HTTPException(
             status_code=503,
             detail="Job could not be queued. Please retry later.",
@@ -152,7 +160,6 @@ async def create_job(
         "status": "PENDING",
         "pipeline": pipeline_to_response(parsed_pipeline),
     }
-
 
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str):
