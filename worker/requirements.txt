@@ -2,4 +2,4 @@ Pillow
 redis
 boto3
 psycopg[binary]
-opencv-python-headless
+opencv-contrib-python-headless

@@ -31,6 +31,11 @@ MAX_QUEUE_LENGTH = int(os.getenv("MAX_QUEUE_LENGTH", "100"))
 
 logger = logging.getLogger(__name__)
 
+HEAVY_OPERATIONS = {"face_blur"}
+
+def is_heavy_pipeline(pipeline: list[PipelineStep]) -> bool:
+    return any(step.operation in HEAVY_OPERATIONS for step in pipeline)
+
 
 @app.get("/health")
 def health():
@@ -146,7 +151,8 @@ async def create_job(
     )
 
     try:
-        queue.push_job(job_id)
+        target_queue = "jobs:heavy" if is_heavy_pipeline(parsed_pipeline) else "jobs:default"
+        queue.push_job(job_id, queue_name=target_queue)
     except RedisError:
         job_repository.mark_failed(job_id)
         logger.exception("Failed to enqueue job %s", job_id)

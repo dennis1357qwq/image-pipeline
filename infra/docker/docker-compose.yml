@@ -76,22 +76,44 @@ services:
       - minio
       - minio-init
 
-  worker:
+  worker-default:
     build:
       context: ../..
       dockerfile: worker/Dockerfile
-    container_name: image-pipeline-worker
+    container_name: image-pipeline-worker-default
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_QUEUE_NAME: jobs
-
+      REDIS_QUEUE_NAME: jobs:default
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: image_pipeline
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_BUCKET: image-pipeline
+      OBJECT_STORAGE_ACCESS_KEY: minioadmin
+      OBJECT_STORAGE_SECRET_KEY: minioadmin
+    depends_on:
+      - redis
+      - postgres
+      - minio
+      - minio-init
 
+  worker-heavy:
+    build:
+      context: ../..
+      dockerfile: worker/Dockerfile
+    container_name: image-pipeline-worker-heavy
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_QUEUE_NAME: jobs:heavy
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: image_pipeline
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
       OBJECT_STORAGE_BUCKET: image-pipeline
       OBJECT_STORAGE_ACCESS_KEY: minioadmin
