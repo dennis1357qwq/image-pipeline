@@ -44,6 +44,8 @@ def is_heavy_pipeline(pipeline: list[PipelineStep]) -> bool:
 
     return False
 
+def log_event(event: str, **fields) -> None:
+    print(json.dumps({"event": event, **fields}, default=str), flush=True)
 
 def build_idempotency_request_hash(
     pipeline: list[PipelineStep],
@@ -164,11 +166,17 @@ async def create_job(
             existing, existing_request_hash = existing_entry
 
             if existing_request_hash != idempotency_request_hash:
+                log_event("idempotency_conflict",idempotency_key=idempotency_key)
                 raise HTTPException(
                     status_code=409,
                     detail="Idempotency-Key was already used for a different request.",
                 )
-
+            log_event(
+                "idempotency_hit",
+                idempotency_key=idempotency_key,
+                job_id=existing.job_id,
+                status=existing.status,
+            )
             return {
                 "job_id": existing.job_id,
                 "status": existing.status,
@@ -177,7 +185,15 @@ async def create_job(
 
     target_queue = "jobs:heavy" if is_heavy_pipeline(parsed_pipeline) else "jobs:default"
 
-    if queue.length(target_queue) >= MAX_QUEUE_LENGTH:
+    queue_length = queue.length(target_queue)
+
+    if queue_length >= MAX_QUEUE_LENGTH:
+        log_event(
+            "job_rejected_429",
+            target_queue=target_queue,
+            queue_length=queue_length,
+            max_queue_length=MAX_QUEUE_LENGTH,
+        )
         raise HTTPException(
             status_code=429,
             detail="Queue capacity reached. Please retry later.",
@@ -210,11 +226,17 @@ async def create_job(
         existing, existing_request_hash = existing_entry
 
         if existing_request_hash != idempotency_request_hash:
+            log_event("idempotency_conflict",idempotency_key=idempotency_key)
             raise HTTPException(
                 status_code=409,
                 detail="Idempotency-Key was already used for a different request.",
             )
-
+        log_event(
+            "idempotency_hit",
+            idempotency_key=idempotency_key,
+            job_id=existing.job_id,
+            status=existing.status,
+        )
         return {
             "job_id": existing.job_id,
             "status": existing.status,
@@ -230,7 +252,14 @@ async def create_job(
             status_code=503,
             detail="Job could not be queued. Please retry later.",
         )
-
+    log_event(
+        "job_created",
+        job_id=job_id,
+        target_queue=target_queue,
+        queue_length_at_submit=queue_length,
+        pipeline=pipeline_to_response(parsed_pipeline),
+        idempotency_key_present=idempotency_key is not None,
+    )
     return {
         "job_id": job_id,
         "status": "PENDING",
