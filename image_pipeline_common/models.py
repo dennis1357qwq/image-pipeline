@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any
+from datetime import datetime
 
 
 @dataclass
@@ -20,3 +21,4 @@ class JobMetadata:
     input_key: str
     output_key: str
     status: str
+    created_at: datetime | None = None
