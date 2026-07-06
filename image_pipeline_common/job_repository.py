@@ -71,6 +71,8 @@ class PostgresJobRepository:
         pipeline: list[PipelineStep],
         input_key: str,
         output_key: str,
+        idempotency_key: str | None = None,
+        idempotency_request_hash: str | None = None,
     ) -> None:
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -78,21 +80,54 @@ class PostgresJobRepository:
                     """
                     INSERT INTO jobs (
                         job_id,
+                        idempotency_key,
+                        idempotency_request_hash,
                         pipeline,
                         input_key,
                         output_key,
                         status
                     )
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         job_id,
+                        idempotency_key,
+                        idempotency_request_hash,
                         Json(_pipeline_to_json(pipeline)),
                         input_key,
                         output_key,
                         "PENDING",
                     ),
                 )
+
+    def get_job_by_idempotency_key(
+        self,
+        idempotency_key: str,
+    ) -> tuple[JobMetadata, str | None] | None:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT job_id, pipeline, input_key, output_key, status, idempotency_request_hash
+                    FROM jobs
+                    WHERE idempotency_key = %s
+                    """,
+                    (idempotency_key,),
+                )
+                row = cur.fetchone()
+
+        if row is None:
+            return None
+
+        metadata = JobMetadata(
+            job_id=row[0],
+            pipeline=_pipeline_from_json(row[1]),
+            input_key=row[2],
+            output_key=row[3],
+            status=row[4],
+        )
+
+        return metadata, row[5]
 
     def get_job(self, job_id: str) -> JobMetadata:
         with self._connect() as conn:

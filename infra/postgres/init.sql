@@ -2,6 +2,8 @@ DROP TABLE IF EXISTS jobs;
 
 CREATE TABLE jobs (
     job_id TEXT PRIMARY KEY,
+    idempotency_key TEXT UNIQUE,
+    idempotency_request_hash TEXT,
     pipeline JSONB NOT NULL,
     input_key TEXT NOT NULL,
     output_key TEXT NOT NULL,

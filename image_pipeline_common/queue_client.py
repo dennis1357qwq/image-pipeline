@@ -31,11 +31,13 @@ class RedisQueueClient:
         _, job_id = result
         return Job(job_id=job_id)
 
-    def push_job(self, job_id: str) -> None:
-        self.redis.lpush(self.queue_name, job_id)
+    def push_job(self, job_id: str, queue_name: str | None = None) -> None:
+        target = queue_name or self.queue_name
+        self.redis.lpush(target, job_id)
 
-    def length(self) -> int:
-        return self.redis.llen(self.queue_name)
+    def length(self, queue_name: str | None = None) -> int:
+        target = queue_name or self.queue_name
+        return self.redis.llen(target)
     
     def memory_info(self) -> dict:
         return self.redis.info("memory")

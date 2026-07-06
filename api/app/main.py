@@ -2,9 +2,11 @@ import json
 import os
 import uuid
 import logging
+import hashlib
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Response
+from fastapi import FastAPI, File, Header, Form, HTTPException, UploadFile, Response
 from redis.exceptions import RedisError
+from psycopg.errors import UniqueViolation
 
 from image_pipeline_common.job_repository import PostgresJobRepository
 from image_pipeline_common.models import PipelineStep
@@ -14,6 +16,15 @@ from image_pipeline_common.storage_client import ObjectStorageClient
 
 app = FastAPI()
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 storage = ObjectStorageClient()
 job_repository = PostgresJobRepository()
 queue = RedisQueueClient()
@@ -21,6 +32,41 @@ queue = RedisQueueClient()
 MAX_QUEUE_LENGTH = int(os.getenv("MAX_QUEUE_LENGTH", "100"))
 
 logger = logging.getLogger(__name__)
+
+HEAVY_REPEAT_THRESHOLD = 5
+
+def is_heavy_pipeline(pipeline: list[PipelineStep]) -> bool:
+    for step in pipeline:
+        repeat = int(step.parameters.get("repeat", 1))
+
+        if repeat >= HEAVY_REPEAT_THRESHOLD:
+            return True
+
+    return False
+
+
+def build_idempotency_request_hash(
+    pipeline: list[PipelineStep],
+    image_bytes: bytes,
+) -> str:
+    payload = {
+        "pipeline": [
+            {
+                "operation": step.operation,
+                "parameters": step.parameters,
+            }
+            for step in pipeline
+        ],
+        "image_sha256": hashlib.sha256(image_bytes).hexdigest(),
+    }
+
+    encoded_payload = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    return hashlib.sha256(encoded_payload).hexdigest()
 
 
 @app.get("/health")
@@ -99,10 +145,39 @@ def pipeline_to_response(pipeline: list[PipelineStep]) -> list[dict]:
 async def create_job(
     pipeline: str = Form(...),
     file: UploadFile = File(...),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     parsed_pipeline = parse_pipeline(pipeline)
+    image_bytes = await file.read()
 
-    if queue.length() >= MAX_QUEUE_LENGTH:
+    idempotency_request_hash = None
+
+    if idempotency_key:
+        idempotency_request_hash = build_idempotency_request_hash(
+            pipeline=parsed_pipeline,
+            image_bytes=image_bytes,
+        )
+
+        existing_entry = job_repository.get_job_by_idempotency_key(idempotency_key)
+
+        if existing_entry:
+            existing, existing_request_hash = existing_entry
+
+            if existing_request_hash != idempotency_request_hash:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Idempotency-Key was already used for a different request.",
+                )
+
+            return {
+                "job_id": existing.job_id,
+                "status": existing.status,
+                "pipeline": pipeline_to_response(existing.pipeline),
+            }
+
+    target_queue = "jobs:heavy" if is_heavy_pipeline(parsed_pipeline) else "jobs:default"
+
+    if queue.length(target_queue) >= MAX_QUEUE_LENGTH:
         raise HTTPException(
             status_code=429,
             detail="Queue capacity reached. Please retry later.",
@@ -112,26 +187,45 @@ async def create_job(
     input_key = f"originals/{job_id}/{file.filename}"
     output_key = f"results/{job_id}/result.png"
 
-    image_bytes = await file.read()
-
-    storage.upload(
-        key=input_key,
-        data=image_bytes,
-    )
-
-    job_repository.create_job(
-        job_id=job_id,
-        pipeline=parsed_pipeline,
-        input_key=input_key,
-        output_key=output_key,
-    )
+    storage.upload(key=input_key, data=image_bytes)
 
     try:
-        queue.push_job(job_id)
+        job_repository.create_job(
+            job_id=job_id,
+            pipeline=parsed_pipeline,
+            input_key=input_key,
+            output_key=output_key,
+            idempotency_key=idempotency_key,
+            idempotency_request_hash=idempotency_request_hash,
+        )
+    except UniqueViolation:
+        if not idempotency_key:
+            raise
+
+        existing_entry = job_repository.get_job_by_idempotency_key(idempotency_key)
+
+        if existing_entry is None:
+            raise
+
+        existing, existing_request_hash = existing_entry
+
+        if existing_request_hash != idempotency_request_hash:
+            raise HTTPException(
+                status_code=409,
+                detail="Idempotency-Key was already used for a different request.",
+            )
+
+        return {
+            "job_id": existing.job_id,
+            "status": existing.status,
+            "pipeline": pipeline_to_response(existing.pipeline),
+        }
+
+    try:
+        queue.push_job(job_id, queue_name=target_queue)
     except RedisError:
         job_repository.mark_failed(job_id)
         logger.exception("Failed to enqueue job %s", job_id)
-
         raise HTTPException(
             status_code=503,
             detail="Job could not be queued. Please retry later.",
@@ -142,7 +236,6 @@ async def create_job(
         "status": "PENDING",
         "pipeline": pipeline_to_response(parsed_pipeline),
     }
-
 
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str):
