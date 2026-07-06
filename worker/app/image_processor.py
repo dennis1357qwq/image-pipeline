@@ -11,7 +11,6 @@ from app.operations import (
     rotate_image,
     sharpen_image,
     adjust_contrast,
-    blur_faces,
 )
 from image_pipeline_common.models import PipelineStep
 
@@ -25,7 +24,6 @@ OPERATION_REGISTRY = {
     "contrast": adjust_contrast,
     "emboss": emboss_image,
     "edge_detect": detect_edges,
-    "face_blur": blur_faces,
 }
 
 
