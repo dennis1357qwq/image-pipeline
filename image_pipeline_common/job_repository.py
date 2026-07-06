@@ -108,7 +108,7 @@ class PostgresJobRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT job_id, pipeline, input_key, output_key, status, idempotency_request_hash
+                    SELECT job_id, pipeline, input_key, output_key, status, idempotency_request_hash, created_at
                     FROM jobs
                     WHERE idempotency_key = %s
                     """,
@@ -125,6 +125,7 @@ class PostgresJobRepository:
             input_key=row[2],
             output_key=row[3],
             status=row[4],
+            created_at=[5],
         )
 
         return metadata, row[5]
@@ -134,7 +135,7 @@ class PostgresJobRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT job_id, pipeline, input_key, output_key, status
+                    SELECT job_id, pipeline, input_key, output_key, status, created_at
                     FROM jobs
                     WHERE job_id = %s
                     """,
@@ -151,6 +152,7 @@ class PostgresJobRepository:
             input_key=row[2],
             output_key=row[3],
             status=row[4],
+            created_at=row[5],
         )
 
     def mark_processing(self, job_id: str) -> None:
