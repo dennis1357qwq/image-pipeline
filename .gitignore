@@ -36,3 +36,6 @@ build/
 .png
 .jpg
 .jpeg
+
+# Benchmark results
+results/
