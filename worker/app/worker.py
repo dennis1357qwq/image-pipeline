@@ -10,6 +10,7 @@ from app.image_processor import process_image
 from image_pipeline_common.job_repository import PostgresJobRepository
 from image_pipeline_common.queue_client import RedisQueueClient
 from image_pipeline_common.storage_client import ObjectStorageClient
+from image_pipeline_common.retry import retry_with_backoff
 
 def calculate_queue_wait_time_ms(created_at) -> float | None:
     if created_at is None:
@@ -61,7 +62,11 @@ class Worker:
             self.job_repository.mark_processing(job.job_id)
 
             download_start = time.perf_counter()
-            input_bytes = self.storage.download(metadata.input_key)
+            input_bytes = retry_with_backoff(
+                operation_name="storage_download",
+                function=lambda: self.storage.download(metadata.input_key),
+                log_function=log_event,
+            )
             download_time_ms = (time.perf_counter() - download_start) * 1000
 
             processing_start = time.perf_counter()
@@ -73,9 +78,13 @@ class Worker:
             result_image.save(output_buffer, format="PNG")
 
             upload_start = time.perf_counter()
-            self.storage.upload(
-                key=metadata.output_key,
-                data=output_buffer.getvalue(),
+            retry_with_backoff(
+                operation_name="storage_upload",
+                function=lambda: self.storage.upload(
+                    key=metadata.output_key,
+                    data=output_buffer.getvalue(),
+                ),
+                log_function=log_event,
             )
             upload_time_ms = (time.perf_counter() - upload_start) * 1000
 
