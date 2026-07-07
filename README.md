@@ -10,12 +10,13 @@ The project is designed with scalability in mind by separating compute, metadata
 
 The system consists of the following components:
 
-- **FastAPI** – Receives client requests and creates processing jobs.
-- **Redis** – Stores pending jobs in a queue for asynchronous processing.
-- **PostgreSQL** – Stores job metadata and processing status.
+- **FastAPI** – Receives client requests, validates processing pipelines, and creates processing jobs.
+- **Redis** – Stores pending jobs in dedicated processing queues.
+- **PostgreSQL** – Stores persistent job metadata and processing status.
 - **MinIO** – Stores original and processed images.
-- **Worker** – Consumes jobs from Redis, executes image processing pipelines, and stores the results.
-- **image_pipeline_common** – Shared library containing common clients, models, and interfaces used by both the API and the worker.
+- **Default Worker** – Processes standard image processing workloads.
+- **Heavy Worker** – Processes computationally expensive workloads.
+- **image_pipeline_common** – Shared library containing common clients, models, retry logic, and shared interfaces used by both the API and the workers.
 
 ---
 
@@ -43,9 +44,10 @@ The system consists of the following components:
           |             |            v
           |        +-----+---------------+
           |        |      Worker(s)      |
-          +--------+ Image Processing    |
-                   |     Pipeline         |
-                   +----------------------+
+          +--------+   Image Processing  |
+                   |       Pipeline      |
+                   |    Default/Heavy    |
+                   +---------------------+
 ```
 
 ---
@@ -143,6 +145,40 @@ The worker executes every pipeline step sequentially on the same image.
 
 ---
 
+# Scalability Features
+
+The current implementation already incorporates several distributed systems principles aimed at improving scalability and resilience.
+
+### Asynchronous Processing
+
+Jobs are processed asynchronously through Redis, decoupling request handling from image processing.
+
+### Admission Control
+
+The API limits queue growth by rejecting new requests once a configurable queue length is reached.
+
+### Workload Isolation
+
+Jobs are classified into different Redis queues based on their expected computational cost.
+
+Separate worker pools process lightweight and computationally expensive jobs independently, preventing long-running jobs from delaying short requests.
+
+### Idempotent Job Creation
+
+Clients may provide an `Idempotency-Key` when creating jobs.
+
+Repeated requests with the same key and identical payload return the previously created job instead of creating duplicate work. Requests using the same key with different payloads are rejected.
+
+### Structured Observability
+
+Both the API and workers emit structured JSON logs containing queue assignment, processing status, execution times, queue waiting time, and retry events.
+
+### Retry with Exponential Backoff and Jitter
+
+Workers automatically retry transient object storage operations using exponential backoff combined with randomized jitter to reduce retry synchronization under failures.
+
+---
+
 # Supported Operations
 
 Currently supported processing operations include:
@@ -169,6 +205,10 @@ The system intentionally separates responsibilities across different services.
 - **MinIO** stores binary image data rather than embedding images inside database records.
 - **Workers** remain stateless and execute arbitrary processing pipelines.
 - **Shared clients and models** are implemented in `image_pipeline_common` to avoid duplicated logic.
+- **Idempotency keys** prevent duplicate job creation during repeated client requests.
+- **Dedicated worker pools** isolate lightweight and computationally expensive workloads.
+- **Structured JSON logging** provides detailed operational visibility and supports performance evaluation.
+- **Retries with exponential backoff and jitter** improve resilience against transient infrastructure failures.
 
 This separation allows each component to scale independently while maintaining clear responsibilities.
 
@@ -181,3 +221,4 @@ Additional documentation is available in the `docs/` directory.
 - [Architecture](docs/architecture.md)
 - [Development Guide](docs/development.md)
 - [Image Operations](docs/image-operations.md)
+- Scalability Evaluation _(coming soon)_
