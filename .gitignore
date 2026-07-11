@@ -7,6 +7,10 @@ output/
 
 # Environment
 .env
+.env.*
+!.env.example
+!.env.main.example
+!.env.worker.example
 
 # Local outputs
 worker/output/*
@@ -36,3 +40,8 @@ build/
 .png
 .jpg
 .jpeg
+
+# Benchmark results
+results/
+benchmark/loadtest_runner/configs/*.json
+!benchmark/loadtest_runner/configs/*.example.json

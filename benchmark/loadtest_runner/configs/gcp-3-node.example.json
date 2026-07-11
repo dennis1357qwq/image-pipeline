@@ -1,0 +1,30 @@
+{
+  "name": "gcp-3-node",
+  "api_url": "http://MAIN_NODE_EXTERNAL_IP:8000",
+  "nodes": [
+    {
+      "name": "main-node",
+      "role": "main",
+      "host": "MAIN_NODE_EXTERNAL_IP",
+      "ssh_user": "dennis",
+      "ssh_port": 22,
+      "project_dir": "~/image-pipeline"
+    },
+    {
+      "name": "worker-node-1",
+      "role": "worker",
+      "host": "WORKER_NODE_1_EXTERNAL_IP",
+      "ssh_user": "dennis",
+      "ssh_port": 22,
+      "project_dir": "~/image-pipeline"
+    },
+    {
+      "name": "worker-node-2",
+      "role": "worker",
+      "host": "WORKER_NODE_2_EXTERNAL_IP",
+      "ssh_user": "dennis",
+      "ssh_port": 22,
+      "project_dir": "~/image-pipeline"
+    }
+  ]
+}

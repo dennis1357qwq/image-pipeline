@@ -1,0 +1,44 @@
+services:
+  worker-default:
+    build:
+      context: ../..
+      dockerfile: worker/Dockerfile
+    environment:
+      REDIS_HOST: ${MAIN_NODE_HOST}
+      REDIS_PORT: 6379
+      REDIS_QUEUE_NAME: jobs:default
+
+      POSTGRES_HOST: ${MAIN_NODE_HOST}
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-image_pipeline}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      OBJECT_STORAGE_ENDPOINT: http://${MAIN_NODE_HOST}:9000
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-image-pipeline}
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+
+    restart: unless-stopped
+
+  worker-heavy:
+    build:
+      context: ../..
+      dockerfile: worker/Dockerfile
+    environment:
+      REDIS_HOST: ${MAIN_NODE_HOST}
+      REDIS_PORT: 6379
+      REDIS_QUEUE_NAME: jobs:heavy
+
+      POSTGRES_HOST: ${MAIN_NODE_HOST}
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-image_pipeline}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      OBJECT_STORAGE_ENDPOINT: http://${MAIN_NODE_HOST}:9000
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-image-pipeline}
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+
+    restart: unless-stopped
