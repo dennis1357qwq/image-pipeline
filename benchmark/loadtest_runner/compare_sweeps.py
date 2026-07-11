@@ -51,7 +51,9 @@ def main():
     plt.figure(figsize=(9, 6))
 
     for entry in args.sweeps:
-        label, path_text = entry.split("=", 1)
+        label_nodes, path_text = entry.split("=", 1)
+        label, node_count_text = label_nodes.rsplit(":", 1)
+        node_count = int(node_count_text)
         rows = load_rows(Path(path_text))
 
         rates = [float(row["rate"]) for row in rows]
@@ -61,6 +63,15 @@ def main():
         ]
 
         stable_rows = [row for row in rows if is_stable(row)]
+        
+        stable_throughput = (
+            max(
+                float(row["completed_jobs_per_second"] or 0)
+                for row in stable_rows
+            )
+            if stable_rows
+            else 0.0
+        )
 
         max_stable_rate = (
             max(float(row["rate"]) for row in stable_rows)
@@ -73,7 +84,9 @@ def main():
         summaries.append(
             {
                 "setup": label,
+                "node_count": node_count,
                 "max_stable_rate": max_stable_rate,
+                "stable_throughput": stable_throughput,
                 "peak_throughput": peak_throughput,
             }
         )
@@ -92,16 +105,51 @@ def main():
     plt.tight_layout()
     plt.savefig(output_dir / "throughput_comparison.png")
     plt.close()
+    
+    plt.figure(figsize=(8, 5))
 
-    baseline = summaries[0]["peak_throughput"] if summaries else 0
+    nodes = [
+		summary["node_count"]
+		for summary in summaries
+	]
+
+    efficiencies = [
+		summary["scaling_efficiency_percent"]
+		for summary in summaries
+	]
+
+    plt.plot(
+		nodes,
+		efficiencies,
+		marker="o",
+	)
+
+    plt.xlabel("Worker nodes")
+    plt.ylabel("Scaling efficiency (%)")
+    plt.title("Scaling efficiency")
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.savefig(output_dir / "scaling_efficiency.png")
+    plt.close()
+
+    baseline = summaries[0]["stable_throughput"] if summaries else 0
 
     for summary in summaries:
-        summary["speedup_vs_baseline"] = (
-            summary["peak_throughput"] / baseline
-            if baseline
-            else None
-        )
+        speedup = (
+			summary["stable_throughput"] / baseline
+			if baseline
+			else None
+		)
 
+        summary["speedup_vs_baseline"] = speedup
+
+        summary["scaling_efficiency_percent"] = (
+			speedup / summary["node_count"] * 100
+			if speedup is not None
+			else None
+		)
+        
     csv_path = output_dir / "comparison_results.csv"
 
     with csv_path.open(
@@ -112,40 +160,48 @@ def main():
         writer = csv.DictWriter(
             file,
             fieldnames=[
-                "setup",
-                "max_stable_rate",
-                "peak_throughput",
-                "speedup_vs_baseline",
-            ],
+				"setup",
+				"node_count",
+				"max_stable_rate",
+				"stable_throughput",
+				"peak_throughput",
+				"speedup_vs_baseline",
+				"scaling_efficiency_percent",
+			],
         )
         writer.writeheader()
         writer.writerows(summaries)
 
     lines = [
-        "# Sweep Comparison",
-        "",
-        "| Setup | Max Stable Rate | Peak Throughput | Speedup vs Baseline |",
-        "| --- | ---: | ---: | ---: |",
-    ]
+		"# Sweep Comparison",
+		"",
+		"| Setup | Nodes | Max Stable Rate | Stable Throughput | Peak Throughput | Speedup | Efficiency |",
+		"| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+	]
 
     for summary in summaries:
         speedup = summary["speedup_vs_baseline"]
+        efficiency = summary["scaling_efficiency_percent"]
 
         lines.append(
-            f"| {summary['setup']} "
-            f"| {summary['max_stable_rate'] if summary['max_stable_rate'] is not None else 'n/a'} "
-            f"| {summary['peak_throughput']:.3f} "
-            f"| {speedup:.2f}x |"
-        )
+			f"| {summary['setup']} "
+			f"| {summary['node_count']} "
+			f"| {summary['max_stable_rate'] if summary['max_stable_rate'] is not None else 'n/a'} "
+			f"| {summary['stable_throughput']:.3f} "
+			f"| {summary['peak_throughput']:.3f} "
+			f"| {speedup:.2f}x "
+			f"| {efficiency:.2f}% |"
+		)
 
     lines.extend(
-        [
-            "",
-            "## Plot",
-            "",
-            "- `throughput_comparison.png`",
-        ]
-    )
+		[
+			"",
+			"## Plots",
+			"",
+			"- `throughput_comparison.png`",
+			"- `scaling_efficiency.png`",
+		]
+	)
 
     (output_dir / "comparison_report.md").write_text(
         "\n".join(lines),
