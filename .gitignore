@@ -39,3 +39,5 @@ build/
 
 # Benchmark results
 results/
+benchmark/loadtest_runner/configs/*.json
+!benchmark/loadtest_runner/configs/*.example.json
