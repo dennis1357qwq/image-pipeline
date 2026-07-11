@@ -28,6 +28,8 @@ def generate_report(run_dir: Path) -> Path:
     workload = analysis["workload"]
     host = analysis["host"]
     docker = analysis["docker"]
+    host_by_node = analysis.get("host_by_node", {})
+    docker_by_node = analysis.get("docker_by_node", {})
 
     lines = [
         "# Benchmark Report",
@@ -65,12 +67,38 @@ def generate_report(run_dir: Path) -> Path:
         f"- Max memory: `{fmt(host.get('max_memory_percent'), '%')}`",
         f"- Avg load 1m: `{fmt(host.get('avg_load_1m'))}`",
         f"- Max load 1m: `{fmt(host.get('max_load_1m'))}`",
-        "",
-        "## Workload Distribution",
-        "",
-        "| Task | Submitted | Completed | Share |",
-        "| --- | ---: | ---: | ---: |",
     ]
+
+    if host_by_node:
+        lines.extend(
+            [
+                "",
+                "## Host Utilization by Node",
+                "",
+                "| Node | Avg CPU | Max CPU | Avg Memory | Max Memory | Avg Load 1m |",
+                "| --- | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+
+        for node_name, stats in host_by_node.items():
+            lines.append(
+                f"| {node_name} | "
+                f"{fmt(stats.get('avg_cpu_percent'), '%')} | "
+                f"{fmt(stats.get('max_cpu_percent'), '%')} | "
+                f"{fmt(stats.get('avg_memory_percent'), '%')} | "
+                f"{fmt(stats.get('max_memory_percent'), '%')} | "
+                f"{fmt(stats.get('avg_load_1m'))} |"
+            )
+
+    lines.extend(
+        [
+            "",
+            "## Workload Distribution",
+            "",
+            "| Task | Submitted | Completed | Share |",
+            "| --- | ---: | ---: | ---: |",
+        ]
+    )
 
     for task in workload["task_distribution"].values():
         lines.append(
@@ -99,6 +127,41 @@ def generate_report(run_dir: Path) -> Path:
             f"{fmt(stats.get('avg_memory_percent'), '%')} | "
             f"{fmt(stats.get('max_memory_percent'), '%')} |"
         )
+
+    if docker_by_node:
+        lines.extend(
+            [
+                "",
+                "## Container Utilization by Node",
+                "",
+            ]
+        )
+
+        for node_name, containers in docker_by_node.items():
+            lines.extend(
+                [
+                    f"### {node_name}",
+                    "",
+                    "| Container | Avg CPU | Max CPU | Avg Memory | Max Memory |",
+                    "| --- | ---: | ---: | ---: | ---: |",
+                ]
+            )
+
+            for name, stats in containers.items():
+                if not name.startswith("image-pipeline-"):
+                    continue
+
+                short_name = name.replace("image-pipeline-", "")
+
+                lines.append(
+                    f"| {short_name} | "
+                    f"{fmt(stats.get('avg_cpu_percent'), '%')} | "
+                    f"{fmt(stats.get('max_cpu_percent'), '%')} | "
+                    f"{fmt(stats.get('avg_memory_percent'), '%')} | "
+                    f"{fmt(stats.get('max_memory_percent'), '%')} |"
+                )
+
+            lines.append("")
 
     output_path = run_dir / "report.md"
     output_path.write_text("\n".join(lines), encoding="utf-8")

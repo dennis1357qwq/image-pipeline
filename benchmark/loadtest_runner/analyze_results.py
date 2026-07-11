@@ -104,6 +104,30 @@ def summarize_docker_stats(rows: list[dict]) -> dict:
     return summary
 
 
+def group_rows_by_node(rows: list[dict]) -> dict[str, list[dict]]:
+    grouped: dict[str, list[dict]] = {}
+
+    for row in rows:
+        node_name = row.get("node") or "unknown"
+        grouped.setdefault(node_name, []).append(row)
+
+    return grouped
+
+
+def summarize_host_stats_by_node(rows: list[dict]) -> dict:
+    return {
+        node_name: summarize_host_stats(node_rows)
+        for node_name, node_rows in group_rows_by_node(rows).items()
+    }
+
+
+def summarize_docker_stats_by_node(rows: list[dict]) -> dict:
+    return {
+        node_name: summarize_docker_stats(node_rows)
+        for node_name, node_rows in group_rows_by_node(rows).items()
+    }
+
+
 def summarize_workload(workload_summary: dict) -> dict:
     submitted = workload_summary.get("submitted_by_task", {})
     completed = workload_summary.get("completed_by_task", {})
@@ -186,7 +210,9 @@ def analyze_run(run_dir: Path) -> Path:
         },
         "workload": summarize_workload(workload_summary),
         "host": summarize_host_stats(host_rows),
+        "host_by_node": summarize_host_stats_by_node(host_rows),
         "docker": summarize_docker_stats(docker_rows),
+        "docker_by_node": summarize_docker_stats_by_node(docker_rows),
     }
 
     output_path = run_dir / "analysis_summary.json"
