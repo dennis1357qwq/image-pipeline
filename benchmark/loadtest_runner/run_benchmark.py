@@ -12,6 +12,8 @@ from benchmark.loadtest_runner.report_generator import generate_report
 from benchmark.loadtest_runner.queue_monitor import QueueMonitor
 from benchmark.loadtest_runner.error_timeline import generate_error_timeline
 from benchmark.loadtest_runner.timeline_report import generate_timeline_plots
+from benchmark.loadtest_runner.throughput_timeline import (generate_throughput_timeline)
+from benchmark.loadtest_runner.cleanup import cleanup_local_environment
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run k6 benchmark and store results.")
@@ -37,6 +39,7 @@ def parse_args():
     parser.add_argument("--monitor-interval-seconds", type=float, default=1.0)
     parser.add_argument("--monitor-queue",action="store_true",)
     parser.add_argument("--redis-url",default="redis://localhost:6379/0",)
+    parser.add_argument("--cleanup-before-run", action="store_true")
 
     return parser.parse_args()
 
@@ -134,7 +137,16 @@ def main():
 
     monitor = None
     queue_monitor = None
+    if args.cleanup_before_run:
+        print("Cleaning environment before benchmark...")
+        cleanup_local_environment()
     run_started_at = datetime.now(timezone.utc)
+
+    config["run_started_at"] = run_started_at.isoformat()
+    config_path.write_text(
+        json.dumps(config, indent=2),
+        encoding="utf-8",
+    )
 
     if args.monitor_docker:
         monitor = DockerMonitor(
@@ -169,6 +181,8 @@ def main():
         if monitor is not None:
             monitor.stop()
 
+    stdout_path.write_text(result.stdout, encoding="utf-8")
+
     collect_container_logs(
         run_dir=run_dir,
         since=run_started_at,
@@ -183,9 +197,8 @@ def main():
     )
 
     generate_error_timeline(run_dir)
+    generate_throughput_timeline(run_dir)
     generate_timeline_plots(run_dir)
-
-    stdout_path.write_text(result.stdout, encoding="utf-8")
 
     analysis_path = None
     report_path = None

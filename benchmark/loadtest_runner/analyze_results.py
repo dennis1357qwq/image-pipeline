@@ -3,7 +3,79 @@ import csv
 import json
 from pathlib import Path
 from statistics import mean
+from datetime import datetime, timedelta
 
+def parse_duration_seconds(value: str) -> float:
+    value = value.strip().lower()
+
+    if value.endswith("ms"):
+        return float(value[:-2]) / 1000
+    if value.endswith("s"):
+        return float(value[:-1])
+    if value.endswith("m"):
+        return float(value[:-1]) * 60
+
+    raise ValueError(f"Unsupported duration: {value}")
+
+
+def summarize_queue_drain(
+    rows: list[dict],
+    run_started_at: str | None,
+    duration: str | None,
+) -> dict:
+    if not rows or not run_started_at or not duration:
+        return {}
+
+    submission_end = (
+        datetime.fromisoformat(run_started_at.replace("Z", "+00:00"))
+        + timedelta(seconds=parse_duration_seconds(duration))
+    )
+
+    rows = sorted(rows, key=lambda row: row["timestamp"])
+
+    max_queue = 0
+    first_nonzero_after_end = None
+    drained_at = None
+
+    for row in rows:
+        timestamp = datetime.fromisoformat(
+            row["timestamp"].replace("Z", "+00:00")
+        )
+
+        total_queue = (
+            int(row.get("default_queue_length") or 0)
+            + int(row.get("heavy_queue_length") or 0)
+        )
+
+        max_queue = max(max_queue, total_queue)
+
+        if timestamp < submission_end:
+            continue
+
+        if total_queue > 0 and first_nonzero_after_end is None:
+            first_nonzero_after_end = timestamp
+
+        if first_nonzero_after_end is not None and total_queue == 0:
+            drained_at = timestamp
+            break
+
+    if max_queue == 0:
+        drain_seconds = 0.0
+    elif first_nonzero_after_end is None:
+        drain_seconds = 0.0
+    elif drained_at is None:
+        drain_seconds = None
+    else:
+        drain_seconds = round(
+            (drained_at - submission_end).total_seconds(),
+            2,
+        )
+
+    return {
+        "max_queue_length": max_queue,
+        "queue_drain_seconds": drain_seconds,
+        "queue_drained": drained_at is not None or max_queue == 0,
+    }
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Analyze benchmark run results.")
@@ -41,6 +113,28 @@ def to_float(value, default=None):
     except ValueError:
         return default
 
+def summarize_host_io_by_node(rows: list[dict]) -> dict:
+    grouped: dict[str, list[dict]] = {}
+
+    for row in rows:
+        grouped.setdefault(row.get("node", "unknown"), []).append(row)
+
+    summary = {}
+
+    for node, node_rows in grouped.items():
+        node_rows.sort(key=lambda row: row["timestamp"])
+
+        first = node_rows[0]
+        last = node_rows[-1]
+
+        summary[node] = {
+            "disk_read_bytes_delta": float(last["disk_read_bytes"]) - float(first["disk_read_bytes"]),
+            "disk_write_bytes_delta": float(last["disk_write_bytes"]) - float(first["disk_write_bytes"]),
+            "network_bytes_sent_delta": float(last["network_bytes_sent"]) - float(first["network_bytes_sent"]),
+            "network_bytes_recv_delta": float(last["network_bytes_recv"]) - float(first["network_bytes_recv"]),
+        }
+
+    return summary
 
 def summarize_host_stats(rows: list[dict]) -> dict:
     if not rows:
@@ -171,6 +265,7 @@ def analyze_run(run_dir: Path) -> Path:
     workload_summary = load_json(run_dir / "workload_summary.json")
     docker_rows = load_csv(run_dir / "docker_stats.csv")
     host_rows = load_csv(run_dir / "host_stats.csv")
+    queue_rows = load_csv(run_dir / "queue_stats.csv")
 
     metrics = {
         **k6_summary.get("metrics", {}),
@@ -208,8 +303,14 @@ def analyze_run(run_dir: Path) -> Path:
             "http_req_avg_ms": get_metric_value(metrics, "http_req_duration", "avg"),
             "http_req_p95_ms": get_metric_value(metrics, "http_req_duration", "p(95)"),
         },
+        "queue": summarize_queue_drain(
+            queue_rows,
+            config.get("run_started_at"),
+            config.get("duration"),
+        ),
         "workload": summarize_workload(workload_summary),
         "host": summarize_host_stats(host_rows),
+        "host_io_by_node": summarize_host_io_by_node(host_rows),
         "host_by_node": summarize_host_stats_by_node(host_rows),
         "docker": summarize_docker_stats(docker_rows),
         "docker_by_node": summarize_docker_stats_by_node(docker_rows),

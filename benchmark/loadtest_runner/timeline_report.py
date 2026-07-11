@@ -26,6 +26,7 @@ def generate_timeline_plots(run_dir: Path) -> list[Path]:
     host_rows = load_csv(run_dir / "host_stats.csv")
     queue_rows = load_csv(run_dir / "queue_stats.csv")
     error_rows = load_csv(run_dir / "error_timeline.csv")
+    throughput_rows = load_csv(run_dir / "throughput_timeline.csv")
 
     error_times = [
         parse_time(row["timestamp"])
@@ -88,6 +89,28 @@ def generate_timeline_plots(run_dir: Path) -> list[Path]:
         plt.tight_layout()
 
         path = output_dir / "queue_timeline.png"
+        plt.savefig(path)
+        plt.close()
+        outputs.append(path)
+        
+    if throughput_rows:
+        plt.figure(figsize=(10, 5))
+
+        plt.plot(
+			[parse_time(row["timestamp"]) for row in throughput_rows],
+			[int(row["completed_jobs"]) for row in throughput_rows],
+			marker="o",
+		)
+
+        for timestamp in error_times:
+            plt.axvline(timestamp, linestyle="--", alpha=0.4)
+
+        plt.xlabel("Time")
+        plt.ylabel("Completed jobs/s")
+        plt.title("Throughput over time")
+        plt.tight_layout()
+
+        path = output_dir / "throughput_timeline.png"
         plt.savefig(path)
         plt.close()
         outputs.append(path)

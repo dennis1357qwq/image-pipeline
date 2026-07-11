@@ -20,7 +20,28 @@ from benchmark.loadtest_runner.report_generator import generate_report
 from benchmark.loadtest_runner.ssh_client import SSHClient
 from benchmark.loadtest_runner.error_timeline import generate_error_timeline
 from benchmark.loadtest_runner.timeline_report import generate_timeline_plots
+from benchmark.loadtest_runner.throughput_timeline import (
+    generate_throughput_timeline,
+)
 
+def cleanup_remote_node(client: SSHClient) -> None:
+    client.run(
+        "docker exec image-pipeline-redis redis-cli FLUSHDB",
+        check=True,
+    )
+
+    client.run(
+        "docker exec image-pipeline-postgres "
+        "psql -U postgres -d image_pipeline "
+        "-c 'TRUNCATE TABLE jobs;'",
+        check=True,
+    )
+
+    client.run(
+        "docker exec image-pipeline-minio "
+        "mc rm --recursive --force local/image-pipeline",
+        check=True,
+    )
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -492,6 +513,17 @@ def main():
     check_api_health(cluster.api_url)
     clients = check_ssh_connections(cluster)
 
+    main_node = next(
+        node for node in cluster.nodes
+        if node.role == "main"
+    )
+
+    main_client = clients[main_node.name]
+
+    if args.cleanup_before_run:
+        print("Cleaning cluster...")
+        cleanup_remote_node(main_client)
+
     monitor_pids = {}
     k6_result = None
     run_started_at = datetime.now(timezone.utc)
@@ -550,6 +582,8 @@ def main():
                 since=run_started_at,
             )
             generate_error_timeline(run_dir)
+            generate_throughput_timeline(run_dir)
+            generate_timeline_plots(run_dir)
 
     if k6_result is None:
         raise RuntimeError("k6 was not started")

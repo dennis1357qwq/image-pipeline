@@ -114,6 +114,27 @@ def generate_report(run_dir: Path) -> Path:
                 f"{fmt(stats.get('avg_load_1m'))} |"
             )
 
+    host_io_by_node = analysis.get("host_io_by_node", {})
+
+    lines.extend(
+        [
+            "",
+            "## Host I/O by Node",
+            "",
+            "| Node | Disk Read | Disk Write | Network Sent | Network Received |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+    )
+
+    for node, values in host_io_by_node.items():
+        lines.append(
+            f"| {node} "
+            f"| {values.get('disk_read_bytes_delta', 0) / 1024 / 1024:.2f} MB "
+            f"| {values.get('disk_write_bytes_delta', 0) / 1024 / 1024:.2f} MB "
+            f"| {values.get('network_bytes_sent_delta', 0) / 1024 / 1024:.2f} MB "
+            f"| {values.get('network_bytes_recv_delta', 0) / 1024 / 1024:.2f} MB |"
+        )
+
     lines.extend(
         [
             "",
