@@ -7,6 +7,10 @@ output/
 
 # Environment
 .env
+.env.*
+!.env.example
+!.env.main.example
+!.env.worker.example
 
 # Local outputs
 worker/output/*

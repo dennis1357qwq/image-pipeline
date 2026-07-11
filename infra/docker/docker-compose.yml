@@ -10,7 +10,7 @@ services:
       --maxmemory-policy noeviction
 
   postgres:
-    image: postgres:latest
+    image: postgres:17
     container_name: image-pipeline-postgres
     environment:
       POSTGRES_USER: postgres

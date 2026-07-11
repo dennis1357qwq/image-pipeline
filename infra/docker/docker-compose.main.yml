@@ -1,0 +1,132 @@
+services:
+  redis:
+    image: redis:latest
+    container_name: image-pipeline-redis
+    command: >
+      redis-server
+      --maxmemory ${REDIS_MAXMEMORY:-512mb}
+      --maxmemory-policy noeviction
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17
+    container_name: image-pipeline-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-image_pipeline}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    restart: unless-stopped
+
+  minio:
+    image: quay.io/minio/minio
+    container_name: image-pipeline-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000
+      ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; do
+        sleep 1;
+      done;
+      mc mb -p local/${OBJECT_STORAGE_BUCKET:-image-pipeline} || true;
+      "
+
+  api:
+    build:
+      context: ../..
+      dockerfile: api/Dockerfile
+    container_name: image-pipeline-api
+    ports:
+      - "8000:8000"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_QUEUE_NAME: jobs
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-image_pipeline}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-image-pipeline}
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MAX_QUEUE_LENGTH: ${MAX_QUEUE_LENGTH:-1000}
+    depends_on:
+      - redis
+      - postgres
+      - minio
+      - minio-init
+    restart: unless-stopped
+
+  worker-default:
+    build:
+      context: ../..
+      dockerfile: worker/Dockerfile
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_QUEUE_NAME: jobs:default
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-image_pipeline}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-image-pipeline}
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    depends_on:
+      - redis
+      - postgres
+      - minio
+      - minio-init
+    restart: unless-stopped
+
+  worker-heavy:
+    build:
+      context: ../..
+      dockerfile: worker/Dockerfile
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_QUEUE_NAME: jobs:heavy
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-image_pipeline}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-image-pipeline}
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    depends_on:
+      - redis
+      - postgres
+      - minio
+      - minio-init
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  minio-data:
