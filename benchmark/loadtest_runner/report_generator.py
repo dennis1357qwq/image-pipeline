@@ -1,5 +1,6 @@
 import argparse
 import json
+import csv
 from pathlib import Path
 
 
@@ -18,9 +19,17 @@ def fmt(value, suffix=""):
         return "n/a"
     return f"{value}{suffix}"
 
+def count_csv_rows(path: Path) -> int:
+    if not path.exists():
+        return 0
+
+    with path.open("r", encoding="utf-8") as file:
+        return sum(1 for _ in csv.DictReader(file))
+
 
 def generate_report(run_dir: Path) -> Path:
     analysis = load_json(run_dir / "analysis_summary.json")
+    error_count = count_csv_rows(run_dir / "error_timeline.csv")
 
     run = analysis["run"]
     throughput = analysis["throughput"]
@@ -68,6 +77,21 @@ def generate_report(run_dir: Path) -> Path:
         f"- Avg load 1m: `{fmt(host.get('avg_load_1m'))}`",
         f"- Max load 1m: `{fmt(host.get('max_load_1m'))}`",
     ]
+
+    lines.extend(
+        [
+            "",
+            "## Timeline Observability",
+            "",
+            f"- Recorded errors/timeouts: `{error_count}`",
+            "- Host CPU timeline: `timeline/host_cpu_timeline.png`",
+            "- Queue timeline: `timeline/queue_timeline.png`",
+            "- Error details: `error_timeline.csv`",
+            "- Raw host metrics: `host_stats.csv`",
+            "- Raw container metrics: `docker_stats.csv`",
+            "- Raw queue metrics: `queue_stats.csv`",
+        ]
+    )
 
     if host_by_node:
         lines.extend(

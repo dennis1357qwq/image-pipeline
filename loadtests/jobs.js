@@ -13,6 +13,17 @@ const POLL_RESULT = (__ENV.POLL_RESULT || "true") === "true";
 const POLL_INTERVAL_SECONDS = Number(__ENV.POLL_INTERVAL_SECONDS || "1");
 const POLL_TIMEOUT_SECONDS = Number(__ENV.POLL_TIMEOUT_SECONDS || "60");
 
+function logK6Error(event, details = {}) {
+  console.log(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      event,
+      source: "k6",
+      ...details,
+    }),
+  );
+}
+
 const images = {};
 for (const [size, path] of Object.entries(IMAGE_FILES)) {
   images[size] = open(`../${path}`, "b");
@@ -102,6 +113,11 @@ function pollUntilDone(jobId, startTime, taskTags) {
     const response = http.get(`${BASE_URL}/jobs/${jobId}`);
 
     if (response.status !== 200) {
+      logK6Error("poll_http_error", {
+        job_id: jobId,
+        status_code: response.status,
+      });
+
       failedJobs.add(1, taskTags);
       pollCount.add(polls, taskTags);
       return;
@@ -119,12 +135,23 @@ function pollUntilDone(jobId, startTime, taskTags) {
     }
 
     if (body.status === "FAILED") {
+      logK6Error("job_failed", {
+        job_id: jobId,
+        message: body.error || body.message || "",
+      });
+
       failedJobs.add(1, taskTags);
       pollCount.add(polls, taskTags);
       taskMetrics[taskTags.task].failed.add(1);
       return;
     }
   }
+
+  logK6Error("poll_timeout", {
+    job_id: jobId,
+    timeout_seconds: POLL_TIMEOUT_SECONDS,
+    polls,
+  });
 
   failedJobs.add(1, taskTags);
   pollCount.add(polls, taskTags);
@@ -152,6 +179,12 @@ export default function () {
   });
 
   if (!ok) {
+    logK6Error(response.status === 429 ? "job_rejected" : "submit_http_error", {
+      status_code: response.status,
+      task: task.name,
+      response_body: response.body,
+    });
+
     if (response.status === 429) {
       rejectedJobs.add(1, taskTags);
       taskMetrics[task.name].rejected.add(1);

@@ -4,6 +4,7 @@ import threading
 from pathlib import Path
 
 from benchmark.loadtest_runner.docker_monitor import DockerMonitor
+from benchmark.loadtest_runner.queue_monitor import QueueMonitor
 
 
 def parse_args():
@@ -26,6 +27,10 @@ def parse_args():
         type=float,
         default=1.0,
     )
+    parser.add_argument(
+        "--redis-url",
+        default="redis://localhost:6379/0",
+    )
 
     return parser.parse_args()
 
@@ -43,6 +48,13 @@ def main():
         interval_seconds=args.interval_seconds,
     )
 
+    queue_monitor = QueueMonitor(
+        output_path=output_dir / "queue_stats.csv",
+        node_name=args.node_name,
+        redis_url=args.redis_url,
+        interval_seconds=args.interval_seconds,
+    )
+
     stop_event = threading.Event()
 
     def handle_stop_signal(signum, frame):
@@ -52,11 +64,13 @@ def main():
     signal.signal(signal.SIGINT, handle_stop_signal)
 
     monitor.start()
+    queue_monitor.start()
 
     try:
         stop_event.wait()
     finally:
         monitor.stop()
+        queue_monitor.stop()
 
 
 if __name__ == "__main__":

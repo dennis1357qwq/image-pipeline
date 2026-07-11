@@ -4,10 +4,14 @@ import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from datetime import datetime, timezone
 import shutil
 from benchmark.loadtest_runner.analyze_results import analyze_run
 from benchmark.loadtest_runner.docker_monitor import DockerMonitor
 from benchmark.loadtest_runner.report_generator import generate_report
+from benchmark.loadtest_runner.queue_monitor import QueueMonitor
+from benchmark.loadtest_runner.error_timeline import generate_error_timeline
+from benchmark.loadtest_runner.timeline_report import generate_timeline_plots
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run k6 benchmark and store results.")
@@ -31,9 +35,40 @@ def parse_args():
     parser.add_argument("--monitor-docker", action="store_true")
     parser.add_argument("--monitor-node-name", default="local")
     parser.add_argument("--monitor-interval-seconds", type=float, default=1.0)
+    parser.add_argument("--monitor-queue",action="store_true",)
+    parser.add_argument("--redis-url",default="redis://localhost:6379/0",)
 
     return parser.parse_args()
 
+def collect_container_logs(
+    run_dir: Path,
+    since: datetime,
+    containers: list[str],
+) -> None:
+    since_value = since.astimezone(timezone.utc).isoformat()
+
+    logs_dir = run_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    for container in containers:
+        result = subprocess.run(
+            [
+                "docker",
+                "logs",
+                "--timestamps",
+                "--since",
+                since_value,
+                container,
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+
+        (logs_dir / f"{container}.log").write_text(
+            result.stdout,
+            encoding="utf-8",
+        )
 
 def main():
     args = parse_args()
@@ -68,6 +103,7 @@ def main():
     stdout_path = run_dir / "k6_stdout.txt"
     docker_stats_path = run_dir / "docker_stats.csv"
     host_stats_path = run_dir / "host_stats.csv"
+    queue_stats_path = run_dir / "queue_stats.csv"
 
     config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
@@ -97,6 +133,8 @@ def main():
     print("Running:", " ".join(command))
 
     monitor = None
+    queue_monitor = None
+    run_started_at = datetime.now(timezone.utc)
 
     if args.monitor_docker:
         monitor = DockerMonitor(
@@ -107,6 +145,15 @@ def main():
         )
         monitor.start()
 
+    if args.monitor_queue:
+        queue_monitor = QueueMonitor(
+            output_path=queue_stats_path,
+            node_name=args.monitor_node_name,
+            redis_url=args.redis_url,
+            interval_seconds=args.monitor_interval_seconds,
+        )
+        queue_monitor.start()
+
     try:
         result = subprocess.run(
             command,
@@ -116,8 +163,27 @@ def main():
             stderr=subprocess.STDOUT,
         )
     finally:
+        if queue_monitor is not None:
+            queue_monitor.stop()
+            
         if monitor is not None:
             monitor.stop()
+
+    collect_container_logs(
+        run_dir=run_dir,
+        since=run_started_at,
+        containers=[
+            "image-pipeline-api",
+            "image-pipeline-worker-default",
+            "image-pipeline-worker-heavy",
+            "image-pipeline-redis",
+            "image-pipeline-postgres",
+            "image-pipeline-minio",
+        ],
+    )
+
+    generate_error_timeline(run_dir)
+    generate_timeline_plots(run_dir)
 
     stdout_path.write_text(result.stdout, encoding="utf-8")
 
@@ -162,6 +228,9 @@ def main():
     if args.monitor_docker:
         print(f"Docker stats: {docker_stats_path}")
         print(f"Host stats: {host_stats_path}")
+
+    if args.monitor_queue:
+        print(f"Queue stats: {queue_stats_path}")
 
 
 if __name__ == "__main__":

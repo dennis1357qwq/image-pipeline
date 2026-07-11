@@ -8,6 +8,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
+from datetime import datetime, timezone
 
 from benchmark.loadtest_runner.analyze_results import analyze_run
 from benchmark.loadtest_runner.node_config import (
@@ -17,6 +18,8 @@ from benchmark.loadtest_runner.node_config import (
 )
 from benchmark.loadtest_runner.report_generator import generate_report
 from benchmark.loadtest_runner.ssh_client import SSHClient
+from benchmark.loadtest_runner.error_timeline import generate_error_timeline
+from benchmark.loadtest_runner.timeline_report import generate_timeline_plots
 
 
 def parse_args():
@@ -53,6 +56,10 @@ def parse_args():
         default=3.0,
         help="Monitoring time after k6 finishes.",
     )
+    parser.add_argument(
+        "--redis-url",
+        default="redis://localhost:6379/0",
+    )
 
     parser.add_argument(
         "--remote-python",
@@ -67,6 +74,47 @@ def parse_args():
 
     return parser.parse_args()
 
+def collect_remote_container_logs(
+    cluster: ClusterConfig,
+    clients: dict[str, SSHClient],
+    run_dir: Path,
+    since: datetime,
+) -> None:
+    since_value = since.astimezone(timezone.utc).isoformat()
+
+    for node in cluster.nodes:
+        client = clients[node.name]
+        local_logs_dir = run_dir / "nodes" / node.name / "logs"
+        local_logs_dir.mkdir(parents=True, exist_ok=True)
+
+        result = client.run(
+            "docker ps --format '{{.Names}}'",
+            check=False,
+        )
+
+        if result.returncode != 0:
+            continue
+
+        containers = [
+            name.strip()
+            for name in result.stdout.splitlines()
+            if name.strip().startswith("image-pipeline-")
+        ]
+
+        for container in containers:
+            log_result = client.run(
+                (
+                    f"docker logs --timestamps "
+                    f"--since {since_value} "
+                    f"{container}"
+                ),
+                check=False,
+            )
+
+            (local_logs_dir / f"{container}.log").write_text(
+                log_result.stdout + log_result.stderr,
+                encoding="utf-8",
+            )
 
 def create_run_directory(args, cluster: ClusterConfig) -> tuple[Path, str]:
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -92,13 +140,15 @@ def build_remote_monitor_command(
     remote_run_dir: str,
     remote_python: str,
     interval_seconds: float,
+    redis_url: str,
 ) -> str:
     return (
         f"cd {node.project_dir} && "
         f"{remote_python} -m benchmark.loadtest_runner.remote_monitor "
         f"--output-dir {remote_run_dir} "
         f"--node-name {node.name} "
-        f"--interval-seconds {interval_seconds}"
+        f"--interval-seconds {interval_seconds} "
+        f"--redis-url {redis_url}"
     )
 
 
@@ -160,6 +210,7 @@ def start_remote_monitors(
             remote_run_dir=remote_run_dir,
             remote_python=args.remote_python,
             interval_seconds=args.monitor_interval_seconds,
+            redis_url=args.redis_url,
         )
 
         pid = client.start_background(
@@ -253,6 +304,7 @@ def download_node_results(
         filenames = [
             "host_stats.csv",
             "docker_stats.csv",
+            "queue_stats.csv",
             "monitor_stdout.log",
             "monitor_stderr.log",
         ]
@@ -331,6 +383,11 @@ def merge_node_results(
         for node in cluster.nodes
     ]
 
+    queue_paths = [
+        run_dir / "nodes" / node.name / "queue_stats.csv"
+        for node in cluster.nodes
+    ]
+
     merge_csv_files(
         input_paths=host_paths,
         output_path=run_dir / "host_stats.csv",
@@ -339,6 +396,11 @@ def merge_node_results(
     merge_csv_files(
         input_paths=docker_paths,
         output_path=run_dir / "docker_stats.csv",
+    )
+
+    merge_csv_files(
+        input_paths=queue_paths,
+        output_path=run_dir / "queue_stats.csv",
     )
 
 
@@ -432,6 +494,7 @@ def main():
 
     monitor_pids = {}
     k6_result = None
+    run_started_at = datetime.now(timezone.utc)
 
     try:
         monitor_pids = start_remote_monitors(
@@ -480,6 +543,13 @@ def main():
                 remote_run_dir=remote_run_dir,
                 run_dir=run_dir,
             )
+            collect_remote_container_logs(
+                cluster=cluster,
+                clients=clients,
+                run_dir=run_dir,
+                since=run_started_at,
+            )
+            generate_error_timeline(run_dir)
 
     if k6_result is None:
         raise RuntimeError("k6 was not started")
