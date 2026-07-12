@@ -37,12 +37,24 @@ def parse_args():
     parser.add_argument("--results-dir", default="results/loadtests")
     parser.add_argument("--notes", default="")
 
-    parser.add_argument("--monitor-docker", action="store_true")
+    parser.add_argument(
+        "--monitor-docker",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     parser.add_argument("--monitor-node-name", default="local")
     parser.add_argument("--monitor-interval-seconds", type=float, default=1.0)
-    parser.add_argument("--monitor-queue",action="store_true",)
+    parser.add_argument(
+        "--monitor-queue",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     parser.add_argument("--redis-url",default="redis://localhost:6379/0",)
-    parser.add_argument("--cleanup-before-run", action="store_true")
+    parser.add_argument(
+        "--cleanup-before-run",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
 
     return parser.parse_args()
 

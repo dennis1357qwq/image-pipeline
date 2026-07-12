@@ -2,6 +2,7 @@ import argparse
 import csv
 import json
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from benchmark.loadtest_runner.sweep_report import generate_sweep_report
@@ -15,6 +16,16 @@ def parse_args():
     parser.add_argument("--results-dir", default="results/sweeps")
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--cluster-config")
+    parser.add_argument("--redis-url", default="redis://localhost:6379/0")
+    parser.add_argument("--main-node-default-workers", type=int, default=0)
+    parser.add_argument("--main-node-heavy-workers", type=int, default=0)
+    parser.add_argument("--worker-node-default-workers", type=int, default=0)
+    parser.add_argument("--worker-node-heavy-workers", type=int, default=0)
+    parser.add_argument(
+        "--cleanup-before-run",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     return parser.parse_args()
 
 
@@ -71,7 +82,7 @@ def main():
 
         if args.mode == "local":
             command = [
-                "python3",
+                sys.executable,
                 "-m",
                 "benchmark.loadtest_runner.run_benchmark",
                 "--base-url",
@@ -84,16 +95,16 @@ def main():
                 args.duration,
                 "--poll-result",
                 "true",
-                "--monitor-docker",
-                "--monitor-queue",
-                "--cleanup-before-run",
             ]
+
+            if not args.cleanup_before_run:
+                command.append("--no-cleanup-before-run")
         else:
             if not args.cluster_config:
                 raise ValueError("--cluster-config is required in cluster mode")
 
             command = [
-                "python3",
+                sys.executable,
                 "-m",
                 "benchmark.loadtest_runner.cluster_runner",
                 "--config",
@@ -104,8 +115,20 @@ def main():
                 str(rate),
                 "--duration",
                 args.duration,
-                "--cleanup-before-run",
+                "--redis-url",
+                args.redis_url,
+                "--main-node-default-workers",
+                str(args.main_node_default_workers),
+                "--main-node-heavy-workers",
+                str(args.main_node_heavy_workers),
+                "--worker-node-default-workers",
+                str(args.worker_node_default_workers),
+                "--worker-node-heavy-workers",
+                str(args.worker_node_heavy_workers),
             ]
+
+            if not args.cleanup_before_run:
+                command.append("--no-cleanup-before-run")
 
         result = subprocess.run(command)
 
