@@ -24,6 +24,14 @@ from benchmark.loadtest_runner.throughput_timeline import (
     generate_throughput_timeline,
 )
 
+
+def should_collect_container_logs(container_name: str) -> bool:
+    return (
+        container_name.startswith("image-pipeline-")
+        or container_name.startswith("docker-worker-")
+    )
+
+
 def cleanup_remote_node(client: SSHClient) -> None:
     client.run(
         "docker exec image-pipeline-redis redis-cli FLUSHDB",
@@ -39,7 +47,19 @@ def cleanup_remote_node(client: SSHClient) -> None:
 
     client.run(
         "docker exec image-pipeline-minio "
-        "mc rm --recursive --force local/image-pipeline",
+        "mc alias set local http://localhost:9000 minioadmin minioadmin",
+        check=True,
+    )
+
+    client.run(
+        "docker exec image-pipeline-minio "
+        "mc rm --recursive --force local/image-pipeline/",
+        check=True,
+    )
+
+    client.run(
+        "docker exec image-pipeline-minio "
+        "mc mb --ignore-existing local/image-pipeline",
         check=True,
     )
 
@@ -116,6 +136,11 @@ def parse_args():
         default="results/loadtests",
     )
     parser.add_argument("--notes", default="")
+    parser.add_argument(
+        "--cleanup-before-run",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
 
     return parser.parse_args()
 
@@ -143,7 +168,7 @@ def collect_remote_container_logs(
         containers = [
             name.strip()
             for name in result.stdout.splitlines()
-            if name.strip().startswith("image-pipeline-")
+            if should_collect_container_logs(name.strip())
         ]
 
         for container in containers:
@@ -515,6 +540,15 @@ def write_config(
     return path
 
 
+def update_config_file(path: Path, updates: dict) -> None:
+    config = json.loads(path.read_text(encoding="utf-8"))
+    config.update(updates)
+    path.write_text(
+        json.dumps(config, indent=2),
+        encoding="utf-8",
+    )
+
+
 def update_latest(results_dir: str, run_dir: Path) -> Path:
     latest_path = Path(results_dir) / "latest"
 
@@ -566,6 +600,10 @@ def main():
     monitor_pids = {}
     k6_result = None
     run_started_at = datetime.now(timezone.utc)
+    update_config_file(
+        config_path,
+        {"run_started_at": run_started_at.isoformat()},
+    )
 
     try:
         monitor_pids = start_remote_monitors(
@@ -620,9 +658,6 @@ def main():
                 run_dir=run_dir,
                 since=run_started_at,
             )
-            generate_error_timeline(run_dir)
-            generate_throughput_timeline(run_dir)
-            generate_timeline_plots(run_dir)
 
     if k6_result is None:
         raise RuntimeError("k6 was not started")
@@ -635,6 +670,10 @@ def main():
         cluster=cluster,
         run_dir=run_dir,
     )
+
+    generate_error_timeline(run_dir)
+    generate_throughput_timeline(run_dir)
+    generate_timeline_plots(run_dir)
 
     analysis_path = analyze_run(run_dir)
     report_path = generate_report(run_dir)
