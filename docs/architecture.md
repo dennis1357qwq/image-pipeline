@@ -267,8 +267,10 @@ This prevents the system from accepting more work than the worker pool can proce
 The maximum queue length is configured using
 
 ```text
-MAX_QUEUE_LENGTH=100
+MAX_QUEUE_LENGTH
 ```
+
+The local Docker Compose default is intentionally lower than the benchmark deployment default. The GCP Terraform deployment uses a larger value so that benchmark runs expose throughput and latency behavior before admission control starts rejecting requests.
 
 Different worker pools maintain independent queue limits.
 
@@ -484,6 +486,8 @@ Potential bottlenecks include
 - network bandwidth between services
 
 The scalability experiments evaluate how these components behave under increasing load and how overall throughput changes as additional worker instances are deployed.
+
+The benchmark results show this behavior in practice. Horizontal worker scaling increases sustainable completed jobs per second up to the point where the worker layer is no longer the only bottleneck. At higher rates, queue lengths can remain low while p95 latency and submit errors increase, which indicates pressure on the centralized API, metadata, object storage, or network path.
 
 ---
 

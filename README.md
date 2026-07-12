@@ -173,6 +173,8 @@ Repeated requests with the same key and identical payload return the previously 
 
 Both the API and workers emit structured JSON logs containing queue assignment, processing status, execution times, queue waiting time, and retry events.
 
+The benchmark runner additionally collects host metrics, Docker container metrics, queue timelines, k6 execution metrics, and generated reports for single runs and sweeps.
+
 ### Retry with Exponential Backoff and Jitter
 
 Workers automatically retry transient object storage operations using exponential backoff combined with randomized jitter to reduce retry synchronization under failures.
@@ -214,6 +216,22 @@ This separation allows each component to scale independently while maintaining c
 
 ---
 
+# Scalability Evaluation
+
+The project includes Terraform-based GCP deployments and benchmark runners for measuring horizontal scaling behavior.
+
+The primary evaluation metric is:
+
+```text
+sustainable completed jobs per second
+```
+
+The experiments compare single-node and multi-node deployments with separate default and heavy worker pools. Results show clear worker-layer scaling up to the point where bottlenecks shift toward the centralized API, metadata, object storage, and submission path.
+
+See [Scalability Evaluation](docs/scalability-evaluation.md) for methodology, deployment variants, benchmark results, and limitations.
+
+---
+
 # Further Documentation
 
 Additional documentation is available in the `docs/` directory.
@@ -221,4 +239,5 @@ Additional documentation is available in the `docs/` directory.
 - [Architecture](docs/architecture.md)
 - [Development Guide](docs/development.md)
 - [Image Operations](docs/image-operations.md)
-- Scalability Evaluation _(coming soon)_
+- [Scalability Evaluation](docs/scalability-evaluation.md)
+- [GCP Terraform Benchmark Deployments](infra/terraform/gcp-benchmark/README.md)
