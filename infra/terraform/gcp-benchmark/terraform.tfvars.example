@@ -1,0 +1,29 @@
+project_id          = "your-gcp-project-id"
+region              = "europe-west3"
+zone                = "europe-west3-a"
+deployment_name     = "image-pipeline-1node"
+ssh_user            = "dennis-mac"
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+
+repo_url    = "https://github.com/YOUR_ORG/image-pipeline.git"
+repo_branch = "main"
+project_dir = "/opt/image-pipeline"
+
+machine_image_project = "ubuntu-os-cloud"
+machine_image_family  = "ubuntu-2404-lts-amd64"
+main_machine_type   = "e2-standard-4"
+worker_machine_type = "e2-standard-4"
+main_disk_size_gb   = 50
+worker_disk_size_gb = 30
+
+worker_node_count      = 0
+main_default_workers   = 2
+main_heavy_workers     = 1
+worker_default_workers = 0
+worker_heavy_workers   = 0
+
+postgres_password   = "change-me-postgres"
+minio_root_password = "change-me-minio"
+
+allowed_ssh_cidrs = ["YOUR_PUBLIC_IP/32"]
+allowed_api_cidrs = ["YOUR_PUBLIC_IP/32"]

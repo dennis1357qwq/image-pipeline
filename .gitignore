@@ -32,6 +32,9 @@ build/
 *.tfstate
 *.tfstate.*
 .terraform.lock.hcl
+*.tfvars
+!*.tfvars.example
+*.auto.tfvars
 
 # OS
 .DS_Store

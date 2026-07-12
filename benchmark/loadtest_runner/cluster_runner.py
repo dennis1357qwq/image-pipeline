@@ -24,6 +24,10 @@ from benchmark.loadtest_runner.timeline_report import generate_timeline_plots
 from benchmark.loadtest_runner.throughput_timeline import (
     generate_throughput_timeline,
 )
+from benchmark.loadtest_runner.run_naming import (
+    build_run_name,
+    timestamp_for_run_name,
+)
 
 
 def should_collect_container_logs(container_name: str) -> bool:
@@ -188,12 +192,27 @@ def collect_remote_container_logs(
             )
 
 def create_run_directory(args, cluster: ClusterConfig) -> tuple[Path, str]:
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    timestamp = timestamp_for_run_name()
     run_id = uuid.uuid4().hex[:8]
-
-    run_name = (
-        f"{timestamp}_{cluster.name}_{args.profile}_"
-        f"rate-{args.rate}_duration-{args.duration}_{run_id}"
+    worker_node_count = max(len(cluster.nodes) - 1, 0)
+    default_workers = (
+        args.main_node_default_workers
+        + worker_node_count * args.worker_node_default_workers
+    )
+    heavy_workers = (
+        args.main_node_heavy_workers
+        + worker_node_count * args.worker_node_heavy_workers
+    )
+    run_name = build_run_name(
+        timestamp=timestamp,
+        environment="gcp",
+        profile=args.profile,
+        rate=args.rate,
+        duration=args.duration,
+        total_nodes=len(cluster.nodes),
+        heavy_workers=heavy_workers,
+        default_workers=default_workers,
+        run_id=run_id,
     )
 
     run_dir = Path(args.results_dir) / run_name
@@ -635,10 +654,15 @@ def main():
             run_dir=run_dir,
         )
 
+        run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "k6_stdout.txt").write_text(
             k6_result.stdout,
             encoding="utf-8",
         )
+
+        if k6_result.returncode != 0:
+            print(k6_result.stdout)
+            raise SystemExit(k6_result.returncode)
 
         print(
             f"Collecting cooldown metrics for "
@@ -671,10 +695,6 @@ def main():
 
     if k6_result is None:
         raise RuntimeError("k6 was not started")
-
-    if k6_result.returncode != 0:
-        print(k6_result.stdout)
-        raise SystemExit(k6_result.returncode)
 
     merge_node_results(
         cluster=cluster,

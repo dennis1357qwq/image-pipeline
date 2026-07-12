@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_DIR="${project_dir}"
+REPO_URL="${repo_url}"
+REPO_BRANCH="${repo_branch}"
+SSH_USER="${ssh_user}"
+
+install_dependencies() {
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ca-certificates \
+    curl \
+    git \
+    python3 \
+    python3-venv
+
+  if ! command -v docker >/dev/null 2>&1; then
+    curl -fsSL https://get.docker.com | sh
+  fi
+
+  usermod -aG docker "$SSH_USER" || true
+}
+
+sync_repository() {
+  mkdir -p "$(dirname "$PROJECT_DIR")"
+
+  if [[ -d "$PROJECT_DIR/.git" ]]; then
+    git -C "$PROJECT_DIR" fetch origin
+    git -C "$PROJECT_DIR" checkout "$REPO_BRANCH"
+    git -C "$PROJECT_DIR" pull --ff-only origin "$REPO_BRANCH"
+  else
+    git clone --branch "$REPO_BRANCH" "$REPO_URL" "$PROJECT_DIR"
+  fi
+}
+
+write_environment() {
+  cat > "$PROJECT_DIR/infra/docker/.env.main" <<'EOF'
+POSTGRES_USER=${postgres_user}
+POSTGRES_PASSWORD=${postgres_password}
+POSTGRES_DB=${postgres_db}
+MINIO_ROOT_USER=${minio_root_user}
+MINIO_ROOT_PASSWORD=${minio_root_password}
+OBJECT_STORAGE_BUCKET=${object_storage_bucket}
+MAX_QUEUE_LENGTH=${max_queue_length}
+REDIS_MAXMEMORY=${redis_maxmemory}
+EOF
+}
+
+install_benchmark_venv() {
+  cd "$PROJECT_DIR"
+  python3 -m venv benchmark/venv
+  benchmark/venv/bin/python -m pip install --upgrade pip
+  benchmark/venv/bin/python -m pip install -r benchmark/requirements.txt
+}
+
+deploy_stack() {
+  cd "$PROJECT_DIR"
+
+  docker compose \
+    --env-file infra/docker/.env.main \
+    -f infra/docker/docker-compose.main.yml \
+    up -d --build \
+    --scale worker-default="${main_default_workers}" \
+    --scale worker-heavy="${main_heavy_workers}"
+}
+
+fix_permissions() {
+  chown -R "$SSH_USER:$SSH_USER" "$PROJECT_DIR" || true
+}
+
+install_dependencies
+sync_repository
+write_environment
+install_benchmark_venv
+deploy_stack
+fix_permissions
+
