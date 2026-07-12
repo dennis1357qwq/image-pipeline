@@ -70,6 +70,7 @@ Current profile types:
 | `2-node-main-4h-4d-worker-4h-4d.tfvars` | Full 8 vCPU worker-node comparison |
 | `3-node-main-4h-4d-worker-4h-4d.tfvars` | Full 8 vCPU worker-node comparison |
 | `4-node-main-4h-4d-worker-4h-4d.tfvars` | Full 8 vCPU worker-node comparison |
+| `5-node-main-4h-4d-worker-4h-4d.tfvars` | Full 8 vCPU worker-node comparison; requires at least 40 vCPU quota |
 | `2-node-main-4h-4d-worker-2h-2d.tfvars` | Mixed quota-constrained comparison |
 | `3-node-main-4h-4d-worker-2h-2d.tfvars` | Mixed quota-constrained comparison |
 | `4-node-main-4h-4d-worker-2h-2d.tfvars` | Mixed quota-constrained comparison |

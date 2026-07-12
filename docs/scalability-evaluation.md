@@ -2,6 +2,8 @@
 
 This document summarizes the scalability benchmark setup, the measured performance metric, the tested GCP deployment variants, and the main observations from the experiments.
 
+For the detailed benchmark procedure, see [Benchmarking Methodology](benchmarking-methodology.md). For a concise final interpretation of the measured results, see [Scalability Findings](scalability-findings.md).
+
 ---
 
 # Goal
@@ -89,9 +91,9 @@ The GCP project had a global CPU quota of 32 vCPUs. A full 5-node `e2-standard-8
 | 1-node | `1.5` | `1.304` | Clean 180s validation run |
 | 2-node | `2.5` | `2.274` | Clean run, clear scaling |
 | 3-node | `3.75` | `3.425` | Clean run, queues remained empty |
-| 4-node | `4.5` | `3.538` | No clear sustainable improvement; high latency and bottleneck shift |
+| 4-node | `3.75-4.0` tested near limit | `~3.5` | No clear sustainable improvement; submit errors appeared and bottleneck shifted |
 
-The full 8 vCPU series scales well from 1 to 3 nodes. The 4-node deployment does not provide a proportional improvement. Queue lengths remain low while latency and submit errors increase near the limit, which indicates that the bottleneck shifts away from the worker layer.
+The full 8 vCPU series scales well from 1 to 3 nodes. The 4-node deployment does not provide a proportional improvement. In the later validation sweep at 3.75 and 4.0 offered jobs/s, completed throughput stayed around 3.5 jobs/s, queues remained mostly low, and submit errors appeared. This indicates that the bottleneck shifts away from the worker layer.
 
 ## Quota-Constrained Mixed Nodes
 
@@ -137,6 +139,7 @@ Main-node or submission bottleneck indicators:
 
 - queues stay small but HTTP p95 grows
 - `error_timeline.csv` contains submit errors
+- job submission fails even though worker queues are not saturated
 - API, MinIO, or PostgreSQL utilization increases
 - main node is busier than worker-only nodes
 
@@ -166,6 +169,8 @@ Each sweep folder contains:
 - plots for throughput, latency, queue length, and worker CPU
 - a `runs/` directory with full reports for each individual load test
 
+The generated `results/` directory is ignored by Git to keep the repository small. The curated final result table is tracked in [Scalability Findings](scalability-findings.md) and [`scalability-results.csv`](scalability-results.csv).
+
 ---
 
 # Limitations
@@ -173,6 +178,7 @@ Each sweep folder contains:
 - The benchmark uses a representative synthetic workload rather than production traffic.
 - The GCP CPU quota prevented a full 5-node deployment with `e2-standard-8` on every node.
 - Redis, PostgreSQL, MinIO, and the API remain centralized on the main node.
+- At larger cluster sizes, the API submission path becomes part of the bottleneck: some HTTP submissions failed even though worker queues were not saturated.
 - The stability threshold is based on operational criteria rather than a formal SLA.
 - Some reported `Stable` values in sweep reports are conservative because completed jobs/s is calculated over the full observed period, including cooldown.
 

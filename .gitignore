@@ -33,6 +33,7 @@ build/
 *.tfstate.*
 .terraform.lock.hcl
 *.tfvars
+!infra/terraform/gcp-benchmark/deployments/*.tfvars
 !*.tfvars.example
 *.auto.tfvars
 

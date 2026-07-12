@@ -1,0 +1,11 @@
+series,cluster_size,setup,offered_rate_jobs_per_s,completed_jobs_per_s,duration_s,interpretation
+full_8vcpu,1,1-node 4D/4H,1.5,1.304,180,stable single-node baseline
+full_8vcpu,2,2-node 8D/8H,2.5,2.274,120,clear scaling over single node
+full_8vcpu,3,3-node 12D/12H,3.75,3.425,120,best clean full-node scaling point
+full_8vcpu,4,4-node 16D/16H,3.75,3.525,180,plateau region; submit errors appeared
+full_8vcpu,4,4-node 16D/16H,4.0,3.469,180,plateau region; higher latency and submit errors
+mixed,1,1-node 4D/4H,1.5,1.304,180,same single-node baseline
+mixed,2,2-node 6D/6H,2.0,1.829,120,stable mixed 2-node point
+mixed,3,3-node 8D/8H,3.0,2.684,120,stable mixed 3-node point
+mixed,4,4-node 10D/10H,3.5,3.153,120,stable mixed 4-node point
+mixed,5,5-node 12D/12H,3.5,3.189,120,stable but little gain over 4-node mixed

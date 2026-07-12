@@ -237,7 +237,9 @@ See [Scalability Evaluation](docs/scalability-evaluation.md) for methodology, de
 Additional documentation is available in the `docs/` directory.
 
 - [Architecture](docs/architecture.md)
+- [Benchmarking Methodology](docs/benchmarking-methodology.md)
 - [Development Guide](docs/development.md)
 - [Image Operations](docs/image-operations.md)
 - [Scalability Evaluation](docs/scalability-evaluation.md)
+- [Scalability Findings](docs/scalability-findings.md)
 - [GCP Terraform Benchmark Deployments](infra/terraform/gcp-benchmark/README.md)
