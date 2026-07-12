@@ -81,6 +81,30 @@ def parse_args():
         "--redis-url",
         default="redis://localhost:6379/0",
     )
+    parser.add_argument(
+        "--main-node-default-workers",
+        type=int,
+        default=0,
+        help="Number of default workers running on the main node.",
+    )
+    parser.add_argument(
+        "--main-node-heavy-workers",
+        type=int,
+        default=0,
+        help="Number of heavy workers running on the main node.",
+    )
+    parser.add_argument(
+        "--worker-node-default-workers",
+        type=int,
+        default=0,
+        help="Default workers running on each worker node.",
+    )
+    parser.add_argument(
+        "--worker-node-heavy-workers",
+        type=int,
+        default=0,
+        help="Heavy workers running on each worker node.",
+    )
 
     parser.add_argument(
         "--remote-python",
@@ -437,6 +461,14 @@ def write_config(
     main_node = next(
         node for node in cluster.nodes if node.role == "main"
     )
+    total_default_workers = (
+        args.main_node_default_workers
+        + len(worker_nodes) * args.worker_node_default_workers
+    )
+    total_heavy_workers = (
+        args.main_node_heavy_workers
+        + len(worker_nodes) * args.worker_node_heavy_workers
+    )
 
     config = {
         "timestamp": datetime.now().isoformat(),
@@ -452,6 +484,13 @@ def write_config(
         "total_nodes": len(cluster.nodes),
         "worker_nodes": len(worker_nodes),
         "workers_per_node": None,
+        "main_node_default_workers": args.main_node_default_workers,
+        "main_node_heavy_workers": args.main_node_heavy_workers,
+        "worker_node_default_workers": args.worker_node_default_workers,
+        "worker_node_heavy_workers": args.worker_node_heavy_workers,
+        "default_workers": total_default_workers,
+        "heavy_workers": total_heavy_workers,
+        "total_workers": total_default_workers + total_heavy_workers,
         "main_node": main_node.name,
         "monitor_interval_seconds": args.monitor_interval_seconds,
         "monitor_warmup_seconds": args.monitor_warmup_seconds,

@@ -1,7 +1,7 @@
 export const IMAGE_FILES = {
-  small: "worker/examples/test.png",
-  medium: "worker/examples/test.png",
-  large: "worker/examples/test.png",
+  small: "worker/examples/image-small.jpg",
+  medium: "worker/examples/image-medium.jpg",
+  large: "worker/examples/image-large.jpg",
 };
 
 export const TASKS = {
@@ -55,6 +55,33 @@ export const TASKS = {
       { operation: "edge_detect", parameters: {} },
     ],
   },
+  medium_edge_detect_large: {
+    class: "medium",
+    imageSize: "large",
+    pipeline: [{ operation: "edge_detect", parameters: {} }],
+  },
+
+  heavy_blur_repeat_large: {
+    class: "heavy",
+    imageSize: "large",
+    pipeline: [
+      {
+        operation: "blur",
+        parameters: { radius: 8, repeat: 10 },
+      },
+    ],
+  },
+
+  heavy_mixed_pipeline_large: {
+    class: "heavy",
+    imageSize: "large",
+    pipeline: [
+      { operation: "thumbnail", parameters: { width: 1600, height: 1600 } },
+      { operation: "blur", parameters: { radius: 6, repeat: 5 } },
+      { operation: "sharpen", parameters: { factor: 2.5, repeat: 3 } },
+      { operation: "edge_detect", parameters: {} },
+    ],
+  },
 };
 
 export const PROFILES = {
@@ -70,13 +97,20 @@ export const PROFILES = {
   ],
 
   representative_mixed: [
-    { task: "light_grayscale_small", weight: 25 },
-    { task: "light_rotate_small", weight: 20 },
-    { task: "light_region_blur_medium", weight: 15 },
+    // Light: 35 %
+    { task: "light_grayscale_small", weight: 15 },
+    { task: "light_rotate_small", weight: 10 },
+    { task: "light_region_blur_medium", weight: 10 },
+
+    // Medium: 40 %
     { task: "medium_thumbnail_medium", weight: 15 },
-    { task: "medium_edge_detect_medium", weight: 10 },
+    { task: "medium_edge_detect_medium", weight: 15 },
+    { task: "medium_edge_detect_large", weight: 10 },
+
+    // Heavy: 25 %
     { task: "heavy_blur_repeat_medium", weight: 10 },
-    { task: "heavy_mixed_pipeline_medium", weight: 5 },
+    { task: "heavy_blur_repeat_large", weight: 10 },
+    { task: "heavy_mixed_pipeline_large", weight: 5 },
   ],
 
   stress_mixed: [

@@ -222,6 +222,22 @@ def summarize_docker_stats_by_node(rows: list[dict]) -> dict:
     }
 
 
+def count_worker_containers(rows: list[dict], worker_type: str) -> int:
+    markers = (
+        f"worker-{worker_type}",
+        f"image-pipeline-worker-{worker_type}",
+        f"docker-worker-{worker_type}",
+    )
+
+    containers = {
+        row.get("container", "")
+        for row in rows
+        if any(marker in row.get("container", "") for marker in markers)
+    }
+
+    return len(containers)
+
+
 def summarize_workload(workload_summary: dict) -> dict:
     submitted = workload_summary.get("submitted_by_task", {})
     completed = workload_summary.get("completed_by_task", {})
@@ -278,6 +294,44 @@ def analyze_run(run_dir: Path) -> Path:
     rejected_jobs = get_metric_count(metrics, "rejected_jobs")
 
     throughput = get_metric_value(metrics, "completed_jobs", "rate", 0)
+    main_node_default_workers = config.get("main_node_default_workers")
+    main_node_heavy_workers = config.get("main_node_heavy_workers")
+    worker_node_default_workers = config.get("worker_node_default_workers")
+    worker_node_heavy_workers = config.get("worker_node_heavy_workers")
+    default_workers = config.get("default_workers")
+    heavy_workers = config.get("heavy_workers")
+
+    if default_workers is None:
+        default_workers = count_worker_containers(docker_rows, "default")
+
+    if heavy_workers is None:
+        heavy_workers = count_worker_containers(docker_rows, "heavy")
+
+    total_workers = config.get("total_workers")
+
+    if total_workers is None:
+        total_workers = default_workers + heavy_workers
+
+    worker_nodes = config.get("worker_nodes") or 0
+
+    if config.get("environment") == "local":
+        worker_nodes = 0
+
+    if main_node_default_workers is None:
+        main_node_default_workers = (
+            default_workers if worker_nodes == 0 else None
+        )
+
+    if main_node_heavy_workers is None:
+        main_node_heavy_workers = (
+            heavy_workers if worker_nodes == 0 else None
+        )
+
+    if worker_node_default_workers is None:
+        worker_node_default_workers = 0 if worker_nodes == 0 else None
+
+    if worker_node_heavy_workers is None:
+        worker_node_heavy_workers = 0 if worker_nodes == 0 else None
 
     analysis = {
         "run": {
@@ -286,8 +340,17 @@ def analyze_run(run_dir: Path) -> Path:
             "duration": config.get("duration"),
             "environment": config.get("environment"),
             "setup": config.get("setup"),
-            "worker_nodes": config.get("worker_nodes"),
+            "worker_nodes": worker_nodes,
             "workers_per_node": config.get("workers_per_node"),
+            "main_node_default_workers": main_node_default_workers,
+            "main_node_heavy_workers": main_node_heavy_workers,
+            "worker_node_default_workers": worker_node_default_workers,
+            "worker_node_heavy_workers": worker_node_heavy_workers,
+            "default_workers": default_workers,
+            "heavy_workers": heavy_workers,
+            "total_workers": total_workers,
+            "default_worker_containers": config.get("default_worker_containers", []),
+            "heavy_worker_containers": config.get("heavy_worker_containers", []),
             "notes": config.get("notes"),
         },
         "throughput": {

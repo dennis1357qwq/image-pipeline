@@ -27,6 +27,73 @@ def count_csv_rows(path: Path) -> int:
         return sum(1 for _ in csv.DictReader(file))
 
 
+def should_report_container(name: str) -> bool:
+    return (
+        name.startswith("image-pipeline-")
+        or name.startswith("docker-worker-")
+    )
+
+
+def display_container_name(name: str) -> str:
+    for prefix in ("image-pipeline-", "docker-"):
+        if name.startswith(prefix):
+            return name.removeprefix(prefix)
+
+    return name
+
+
+def build_worker_summary_lines(run: dict) -> list[str]:
+    main_default = run.get("main_node_default_workers")
+    main_heavy = run.get("main_node_heavy_workers")
+    worker_nodes = run.get("worker_nodes")
+    worker_default = run.get("worker_node_default_workers")
+    worker_heavy = run.get("worker_node_heavy_workers")
+    default_workers = run.get("default_workers")
+    heavy_workers = run.get("heavy_workers")
+    total_workers = run.get("total_workers")
+
+    if (
+        main_default is None
+        and main_heavy is None
+        and worker_default is None
+        and worker_heavy is None
+    ):
+        if default_workers is not None or heavy_workers is not None:
+            if total_workers is None:
+                total_workers = (default_workers or 0) + (heavy_workers or 0)
+
+            return [
+                f"- Default workers: `{default_workers or 0}`",
+                f"- Heavy workers: `{heavy_workers or 0}`",
+                f"- Total workers: `{total_workers}`",
+            ]
+
+        return [
+            f"- Worker nodes: `{run.get('worker_nodes')}`",
+            f"- Workers per node: `{run.get('workers_per_node')}`",
+        ]
+
+    if total_workers is None:
+        total_workers = (default_workers or 0) + (heavy_workers or 0)
+
+    if default_workers is None and main_default is not None:
+        default_workers = main_default + (worker_nodes or 0) * (worker_default or 0)
+
+    if heavy_workers is None and main_heavy is not None:
+        heavy_workers = main_heavy + (worker_nodes or 0) * (worker_heavy or 0)
+
+    return [
+        f"- Main node default workers: `{main_default or 0}`",
+        f"- Main node heavy workers: `{main_heavy or 0}`",
+        f"- Worker nodes: `{worker_nodes or 0}`",
+        f"- Worker node default workers each: `{worker_default or 0}`",
+        f"- Worker node heavy workers each: `{worker_heavy or 0}`",
+        f"- Total default workers: `{default_workers or 0}`",
+        f"- Total heavy workers: `{heavy_workers or 0}`",
+        f"- Total workers: `{total_workers}`",
+    ]
+
+
 def generate_report(run_dir: Path) -> Path:
     analysis = load_json(run_dir / "analysis_summary.json")
     error_count = count_csv_rows(run_dir / "error_timeline.csv")
@@ -50,8 +117,7 @@ def generate_report(run_dir: Path) -> Path:
         f"- Duration: `{run.get('duration')}`",
         f"- Environment: `{run.get('environment')}`",
         f"- Setup: `{run.get('setup')}`",
-        f"- Worker nodes: `{run.get('worker_nodes')}`",
-        f"- Workers per node: `{run.get('workers_per_node')}`",
+        *build_worker_summary_lines(run),
         "",
         "## Throughput",
         "",
@@ -146,6 +212,9 @@ def generate_report(run_dir: Path) -> Path:
     )
 
     for task in workload["task_distribution"].values():
+        if task.get("submitted", 0) <= 0:
+            continue
+
         lines.append(
             f"| {task.get('label')} | {task.get('submitted')} | "
             f"{task.get('completed')} | {task.get('submitted_percent')}% |"
@@ -162,10 +231,10 @@ def generate_report(run_dir: Path) -> Path:
     )
 
     for name, stats in docker.items():
-        if not name.startswith("image-pipeline-"):
+        if not should_report_container(name):
             continue
 
-        short_name = name.replace("image-pipeline-", "")
+        short_name = display_container_name(name)
         lines.append(
             f"| {short_name} | {fmt(stats.get('avg_cpu_percent'), '%')} | "
             f"{fmt(stats.get('max_cpu_percent'), '%')} | "
@@ -193,10 +262,10 @@ def generate_report(run_dir: Path) -> Path:
             )
 
             for name, stats in containers.items():
-                if not name.startswith("image-pipeline-"):
+                if not should_report_container(name):
                     continue
 
-                short_name = name.replace("image-pipeline-", "")
+                short_name = display_container_name(name)
 
                 lines.append(
                     f"| {short_name} | "

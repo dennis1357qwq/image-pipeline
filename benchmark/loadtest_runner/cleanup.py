@@ -47,9 +47,36 @@ def cleanup_local_environment() -> None:
             "exec",
             "image-pipeline-minio",
             "mc",
+            "alias",
+            "set",
+            "local",
+            "http://localhost:9000",
+            "minioadmin",
+            "minioadmin",
+        ]
+    )
+
+    run_command(
+        [
+            "docker",
+            "exec",
+            "image-pipeline-minio",
+            "mc",
             "rm",
             "--recursive",
             "--force",
+            "local/image-pipeline/",
+        ]
+    )
+
+    run_command(
+        [
+            "docker",
+            "exec",
+            "image-pipeline-minio",
+            "mc",
+            "mb",
+            "--ignore-existing",
             "local/image-pipeline",
         ]
     )
