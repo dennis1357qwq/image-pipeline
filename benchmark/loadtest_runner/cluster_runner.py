@@ -374,11 +374,11 @@ def download_node_results(
         client = clients[node.name]
 
         filenames = [
+            "monitor_stdout.log",
+            "monitor_stderr.log",
             "host_stats.csv",
             "docker_stats.csv",
             "queue_stats.csv",
-            "monitor_stdout.log",
-            "monitor_stderr.log",
         ]
 
         for filename in filenames:
@@ -388,8 +388,16 @@ def download_node_results(
             try:
                 client.download_file(remote_path, local_path)
                 print(f"Downloaded {node.name}/{filename}")
-            except subprocess.CalledProcessError:
+            except subprocess.CalledProcessError as error:
                 if filename.endswith(".csv"):
+                    stderr = (error.stderr or "").strip()
+
+                    if stderr:
+                        print(
+                            f"Could not download {node.name}/{filename}: "
+                            f"{stderr}"
+                        )
+
                     raise
 
                 print(
