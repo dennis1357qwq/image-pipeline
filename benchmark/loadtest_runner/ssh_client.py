@@ -1,4 +1,5 @@
 import subprocess
+import shlex
 from pathlib import Path
 
 from benchmark.loadtest_runner.node_config import NodeConfig
@@ -55,9 +56,9 @@ class SSHClient:
         stderr_path: str,
     ) -> int:
         wrapped_command = (
-            f"nohup {remote_command} "
-            f"> {stdout_path} "
-            f"2> {stderr_path} "
+            f"nohup sh -c {shlex.quote(remote_command)} "
+            f"> {shlex.quote(stdout_path)} "
+            f"2> {shlex.quote(stderr_path)} "
             f"< /dev/null & echo $!"
         )
 
