@@ -1,0 +1,23 @@
+{
+  "name": "${name}",
+  "api_url": "${api_url}",
+  "nodes": [
+    {
+      "name": "${main_name}",
+      "role": "main",
+      "host": "${main_host}",
+      "ssh_user": "${ssh_user}",
+      "ssh_port": 22,
+      "project_dir": "${project_dir}"
+    }%{ for index, node in worker_nodes ~},
+    {
+      "name": "worker-${index + 1}",
+      "role": "worker",
+      "host": "${node.network_interface[0].access_config[0].nat_ip}",
+      "ssh_user": "${ssh_user}",
+      "ssh_port": 22,
+      "project_dir": "${project_dir}"
+    }%{ endfor ~}
+  ]
+}
+

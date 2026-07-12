@@ -13,6 +13,26 @@ const POLL_RESULT = (__ENV.POLL_RESULT || "true") === "true";
 const POLL_INTERVAL_SECONDS = Number(__ENV.POLL_INTERVAL_SECONDS || "1");
 const POLL_TIMEOUT_SECONDS = Number(__ENV.POLL_TIMEOUT_SECONDS || "60");
 
+function buildArrivalRate(ratePerSecond) {
+  if (!Number.isFinite(ratePerSecond) || ratePerSecond <= 0) {
+    throw new Error(`RATE must be a positive number, got: ${ratePerSecond}`);
+  }
+
+  if (Number.isInteger(ratePerSecond)) {
+    return {
+      rate: ratePerSecond,
+      timeUnit: "1s",
+    };
+  }
+
+  return {
+    rate: Math.max(1, Math.round(ratePerSecond * 60)),
+    timeUnit: "1m",
+  };
+}
+
+const arrivalRate = buildArrivalRate(RATE);
+
 function logK6Error(event, details = {}) {
   console.log(
     JSON.stringify({
@@ -33,8 +53,8 @@ export const options = {
   scenarios: {
     submit_jobs: {
       executor: "constant-arrival-rate",
-      rate: RATE,
-      timeUnit: "1s",
+      rate: arrivalRate.rate,
+      timeUnit: arrivalRate.timeUnit,
       duration: DURATION,
       preAllocatedVUs: 50,
       maxVUs: 200,

@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from statistics import mean
 from benchmark.loadtest_runner.analyze_results import parse_duration_seconds
+from benchmark.loadtest_runner.node_config import load_cluster_config
+from benchmark.loadtest_runner.run_naming import timestamp_for_run_name
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run a benchmark rate sweep.")
@@ -17,7 +19,18 @@ def parse_args():
     parser.add_argument("--results-dir", default="results/sweeps")
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--cluster-config")
+    parser.add_argument("--poll-result", default="true")
+    parser.add_argument("--poll-interval-seconds", type=float, default=1.0)
+    parser.add_argument("--poll-timeout-seconds", type=float, default=60.0)
+    parser.add_argument("--monitor-interval-seconds", type=float, default=1.0)
+    parser.add_argument("--monitor-warmup-seconds", type=float, default=3.0)
+    parser.add_argument("--monitor-cooldown-seconds", type=float, default=3.0)
     parser.add_argument("--redis-url", default="redis://localhost:6379/0")
+    parser.add_argument(
+        "--remote-python",
+        default="benchmark/venv/bin/python3",
+        help="Python executable relative to the project directory on each VM.",
+    )
     parser.add_argument("--main-node-default-workers", type=int, default=0)
     parser.add_argument("--main-node-heavy-workers", type=int, default=0)
     parser.add_argument("--worker-node-default-workers", type=int, default=0)
@@ -184,8 +197,36 @@ def main():
     args = parse_args()
     rates = [float(value) for value in args.rates.split(",")]
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    sweep_dir = Path(args.results_dir) / f"{timestamp}_{args.profile}"
+    timestamp = timestamp_for_run_name()
+    rate_label = "-".join(
+        str(int(rate)) if rate.is_integer() else str(rate).replace(".", "p")
+        for rate in rates
+    )
+    environment_label = "gcp" if args.mode == "cluster" else "local"
+    total_nodes = 1
+    worker_node_count = 0
+
+    if args.mode == "cluster":
+        if not args.cluster_config:
+            raise ValueError("--cluster-config is required in cluster mode")
+
+        total_nodes = len(load_cluster_config(Path(args.cluster_config)).nodes)
+        worker_node_count = max(total_nodes - 1, 0)
+
+    default_workers = (
+        args.main_node_default_workers
+        + worker_node_count * args.worker_node_default_workers
+    )
+    heavy_workers = (
+        args.main_node_heavy_workers
+        + worker_node_count * args.worker_node_heavy_workers
+    )
+    sweep_name = (
+        f"sweep-{total_nodes}-node-{environment_label}-"
+        f"{heavy_workers}h-{default_workers}d-worker-"
+        f"{rate_label}rps-{args.duration}-{args.profile}-{timestamp}"
+    )
+    sweep_dir = Path(args.results_dir) / sweep_name
     sweep_dir.mkdir(parents=True, exist_ok=True)
 
     rows = []
@@ -207,15 +248,20 @@ def main():
                 "--duration",
                 args.duration,
                 "--poll-result",
-                "true",
+                args.poll_result,
+                "--poll-interval-seconds",
+                str(args.poll_interval_seconds),
+                "--poll-timeout-seconds",
+                str(args.poll_timeout_seconds),
+                "--monitor-interval-seconds",
+                str(args.monitor_interval_seconds),
+                "--redis-url",
+                args.redis_url,
             ]
 
             if not args.cleanup_before_run:
                 command.append("--no-cleanup-before-run")
         else:
-            if not args.cluster_config:
-                raise ValueError("--cluster-config is required in cluster mode")
-
             command = [
                 sys.executable,
                 "-m",
@@ -228,8 +274,22 @@ def main():
                 str(rate),
                 "--duration",
                 args.duration,
+                "--poll-result",
+                args.poll_result,
+                "--poll-interval-seconds",
+                str(args.poll_interval_seconds),
+                "--poll-timeout-seconds",
+                str(args.poll_timeout_seconds),
+                "--monitor-interval-seconds",
+                str(args.monitor_interval_seconds),
+                "--monitor-warmup-seconds",
+                str(args.monitor_warmup_seconds),
+                "--monitor-cooldown-seconds",
+                str(args.monitor_cooldown_seconds),
                 "--redis-url",
                 args.redis_url,
+                "--remote-python",
+                args.remote_python,
                 "--main-node-default-workers",
                 str(args.main_node_default_workers),
                 "--main-node-heavy-workers",

@@ -17,6 +17,10 @@ from benchmark.loadtest_runner.error_timeline import generate_error_timeline
 from benchmark.loadtest_runner.timeline_report import generate_timeline_plots
 from benchmark.loadtest_runner.throughput_timeline import (generate_throughput_timeline)
 from benchmark.loadtest_runner.cleanup import cleanup_local_environment
+from benchmark.loadtest_runner.run_naming import (
+    build_run_name,
+    timestamp_for_run_name,
+)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run k6 benchmark and store results.")
@@ -91,8 +95,19 @@ def collect_container_logs(
 def main():
     args = parse_args()
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    run_name = f"{timestamp}_{args.profile}_rate-{args.rate}_duration-{args.duration}"
+    timestamp = timestamp_for_run_name()
+    default_workers = list_compose_service_containers("worker-default")
+    heavy_workers = list_compose_service_containers("worker-heavy")
+    run_name = build_run_name(
+        timestamp=timestamp,
+        environment=args.environment,
+        profile=args.profile,
+        rate=args.rate,
+        duration=args.duration,
+        total_nodes=args.worker_nodes + 1,
+        heavy_workers=len(heavy_workers),
+        default_workers=len(default_workers),
+    )
     run_dir = Path(args.results_dir) / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -155,9 +170,6 @@ def main():
     if args.cleanup_before_run:
         print("Cleaning environment before benchmark...")
         cleanup_local_environment()
-
-    default_workers = list_compose_service_containers("worker-default")
-    heavy_workers = list_compose_service_containers("worker-heavy")
 
     config.update(
         {

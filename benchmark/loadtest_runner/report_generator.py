@@ -101,6 +101,7 @@ def generate_report(run_dir: Path) -> Path:
     run = analysis["run"]
     throughput = analysis["throughput"]
     latency = analysis["latency"]
+    k6 = analysis.get("k6", {})
     workload = analysis["workload"]
     host = analysis["host"]
     docker = analysis["docker"]
@@ -126,6 +127,17 @@ def generate_report(run_dir: Path) -> Path:
         f"- Failed jobs: `{throughput.get('failed_jobs')}`",
         f"- Rejected jobs: `{throughput.get('rejected_jobs')}`",
         f"- Completed jobs/s: `{throughput.get('completed_jobs_per_second')}`",
+        "",
+        "## k6 Execution",
+        "",
+        f"- Iterations: `{fmt(k6.get('iterations'))}`",
+        f"- Iterations/s: `{fmt(k6.get('iterations_per_second'))}`",
+        f"- Dropped iterations: `{fmt(k6.get('dropped_iterations'))}`",
+        f"- Dropped iterations/s: `{fmt(k6.get('dropped_iterations_per_second'))}`",
+        f"- VUs at end: `{fmt(k6.get('vus'))}`",
+        f"- Min VUs observed: `{fmt(k6.get('vus_min'))}`",
+        f"- Max VUs observed: `{fmt(k6.get('vus_max_observed'))}`",
+        f"- Max VUs configured: `{fmt(k6.get('vus_max_configured'))}`",
         "",
         "## Latency",
         "",

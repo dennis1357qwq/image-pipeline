@@ -105,6 +105,15 @@ def get_metric_value(metrics: dict, name: str, value_name: str, default=None):
     return metrics.get(name, {}).get("values", {}).get(value_name, default)
 
 
+def get_metric_field(metrics: dict, name: str, field_name: str, default=None):
+    metric = metrics.get(name, {})
+
+    if field_name in metric:
+        return metric.get(field_name, default)
+
+    return metric.get("values", {}).get(field_name, default)
+
+
 def to_float(value, default=None):
     try:
         if value == "" or value is None:
@@ -365,6 +374,24 @@ def analyze_run(run_dir: Path) -> Path:
             "end_to_end_p95_ms": get_metric_value(metrics, "end_to_end_time_ms", "p(95)"),
             "http_req_avg_ms": get_metric_value(metrics, "http_req_duration", "avg"),
             "http_req_p95_ms": get_metric_value(metrics, "http_req_duration", "p(95)"),
+        },
+        "k6": {
+            "iterations": get_metric_field(metrics, "iterations", "count"),
+            "iterations_per_second": get_metric_field(metrics, "iterations", "rate"),
+            "dropped_iterations": get_metric_field(
+                metrics,
+                "dropped_iterations",
+                "count",
+            ),
+            "dropped_iterations_per_second": get_metric_field(
+                metrics,
+                "dropped_iterations",
+                "rate",
+            ),
+            "vus": get_metric_field(metrics, "vus", "value"),
+            "vus_min": get_metric_field(metrics, "vus", "min"),
+            "vus_max_observed": get_metric_field(metrics, "vus", "max"),
+            "vus_max_configured": get_metric_field(metrics, "vus_max", "value"),
         },
         "queue": summarize_queue_drain(
             queue_rows,
