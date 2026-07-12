@@ -3,9 +3,10 @@ import csv
 import json
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from benchmark.loadtest_runner.sweep_report import generate_sweep_report
+from statistics import mean
+from benchmark.loadtest_runner.analyze_results import parse_duration_seconds
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run a benchmark rate sweep.")
@@ -34,27 +35,139 @@ def load_analysis(run_dir: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def load_run_config(run_dir: Path) -> dict:
+    path = run_dir / "config.json"
+
+    if not path.exists():
+        return {}
+
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def find_latest_run() -> Path:
     return Path("results/loadtests/latest").resolve()
 
 
-def max_queue(run_dir: Path) -> int:
-    path = run_dir / "queue_stats.csv"
-
+def read_csv_rows(path: Path) -> list[dict]:
     if not path.exists():
-        return 0
-
-    maximum = 0
+        return []
 
     with path.open("r", encoding="utf-8") as file:
-        for row in csv.DictReader(file):
-            total = (
-                int(row.get("default_queue_length") or 0)
-                + int(row.get("heavy_queue_length") or 0)
-            )
-            maximum = max(maximum, total)
+        return list(csv.DictReader(file))
 
-    return maximum
+
+def calculate_drain_seconds(
+    rows: list[dict],
+    queue_fields: tuple[str, ...],
+    run_started_at: str | None,
+    duration: str | None,
+) -> float | None:
+    if not rows or not run_started_at or not duration:
+        return None
+
+    submission_end = (
+        datetime.fromisoformat(run_started_at.replace("Z", "+00:00"))
+        + timedelta(seconds=parse_duration_seconds(duration))
+    )
+
+    first_nonzero_after_end = None
+
+    for row in sorted(rows, key=lambda item: item["timestamp"]):
+        timestamp = datetime.fromisoformat(
+            row["timestamp"].replace("Z", "+00:00")
+        )
+
+        if timestamp < submission_end:
+            continue
+
+        queue_length = sum(
+            int(row.get(queue_field) or 0)
+            for queue_field in queue_fields
+        )
+
+        if queue_length > 0 and first_nonzero_after_end is None:
+            first_nonzero_after_end = timestamp
+
+        if first_nonzero_after_end is not None and queue_length == 0:
+            return round((timestamp - submission_end).total_seconds(), 2)
+
+    return 0.0 if first_nonzero_after_end is None else None
+
+
+def queue_metrics(run_dir: Path, config: dict) -> dict:
+    path = run_dir / "queue_stats.csv"
+    rows = read_csv_rows(path)
+
+    if not rows:
+        return {
+            "max_queue_length": 0,
+            "max_default_queue_length": 0,
+            "max_heavy_queue_length": 0,
+            "queue_drain_seconds": None,
+            "default_queue_drain_seconds": None,
+            "heavy_queue_drain_seconds": None,
+        }
+
+    max_default = max(
+        int(row.get("default_queue_length") or 0)
+        for row in rows
+    )
+    max_heavy = max(
+        int(row.get("heavy_queue_length") or 0)
+        for row in rows
+    )
+    max_total = max(
+        int(row.get("default_queue_length") or 0)
+        + int(row.get("heavy_queue_length") or 0)
+        for row in rows
+    )
+
+    run_started_at = config.get("run_started_at")
+    duration = config.get("duration")
+
+    return {
+        "max_queue_length": max_total,
+        "max_default_queue_length": max_default,
+        "max_heavy_queue_length": max_heavy,
+        "queue_drain_seconds": calculate_drain_seconds(
+            rows,
+            ("default_queue_length", "heavy_queue_length"),
+            run_started_at,
+            duration,
+        ),
+        "default_queue_drain_seconds": calculate_drain_seconds(
+            rows,
+            ("default_queue_length",),
+            run_started_at,
+            duration,
+        ),
+        "heavy_queue_drain_seconds": calculate_drain_seconds(
+            rows,
+            ("heavy_queue_length",),
+            run_started_at,
+            duration,
+        ),
+    }
+
+
+def worker_cpu_metrics(run_dir: Path, worker_type: str) -> dict:
+    rows = read_csv_rows(run_dir / "docker_stats.csv")
+    marker = f"worker-{worker_type}"
+    cpu_values = [
+        float(row["cpu_percent"])
+        for row in rows
+        if marker in row.get("container", "")
+        and row.get("cpu_percent") not in (None, "")
+    ]
+
+    return {
+        f"avg_{worker_type}_worker_cpu_percent": (
+            round(mean(cpu_values), 2) if cpu_values else None
+        ),
+        f"max_{worker_type}_worker_cpu_percent": (
+            round(max(cpu_values), 2) if cpu_values else None
+        ),
+    }
 
 
 def error_count(run_dir: Path) -> int:
@@ -137,10 +250,14 @@ def main():
 
         run_dir = find_latest_run()
         analysis = load_analysis(run_dir)
+        config = load_run_config(run_dir)
 
         throughput = analysis.get("throughput", {})
         latency = analysis.get("latency", {})
         host = analysis.get("host", {})
+        queues = queue_metrics(run_dir, config)
+        default_worker_cpu = worker_cpu_metrics(run_dir, "default")
+        heavy_worker_cpu = worker_cpu_metrics(run_dir, "heavy")
 
         rows.append(
             {
@@ -155,7 +272,18 @@ def main():
                 "end_to_end_p95_ms": latency.get("end_to_end_p95_ms"),
                 "avg_cpu_percent": host.get("avg_cpu_percent"),
                 "max_cpu_percent": host.get("max_cpu_percent"),
-                "max_queue_length": max_queue(run_dir),
+                "max_queue_length": queues["max_queue_length"],
+                "max_default_queue_length": queues["max_default_queue_length"],
+                "max_heavy_queue_length": queues["max_heavy_queue_length"],
+                "queue_drain_seconds": queues["queue_drain_seconds"],
+                "default_queue_drain_seconds": queues[
+                    "default_queue_drain_seconds"
+                ],
+                "heavy_queue_drain_seconds": queues[
+                    "heavy_queue_drain_seconds"
+                ],
+                **default_worker_cpu,
+                **heavy_worker_cpu,
                 "error_count": error_count(run_dir),
                 "run_dir": str(run_dir),
             }
@@ -169,6 +297,9 @@ def main():
         writer.writerows(rows)
 
     print(f"Sweep results: {output_path}")
+
+    from benchmark.loadtest_runner.sweep_report import generate_sweep_report
+
     generate_sweep_report(sweep_dir)
 
 
