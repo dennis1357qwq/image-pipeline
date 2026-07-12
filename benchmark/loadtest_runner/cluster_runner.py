@@ -2,6 +2,7 @@ import argparse
 import csv
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import time
@@ -214,11 +215,12 @@ def build_remote_monitor_command(
 ) -> str:
     return (
         f"cd {node.project_dir} && "
-        f"{remote_python} -m benchmark.loadtest_runner.remote_monitor "
-        f"--output-dir {remote_run_dir} "
-        f"--node-name {node.name} "
+        f"{shlex.quote(remote_python)} "
+        "-m benchmark.loadtest_runner.remote_monitor "
+        f"--output-dir {shlex.quote(remote_run_dir)} "
+        f"--node-name {shlex.quote(node.name)} "
         f"--interval-seconds {interval_seconds} "
-        f"--redis-url {redis_url}"
+        f"--redis-url {shlex.quote(redis_url)}"
     )
 
 
