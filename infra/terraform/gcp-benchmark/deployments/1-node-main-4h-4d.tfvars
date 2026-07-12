@@ -1,0 +1,15 @@
+deployment_name = "tf-image-pipeline-1node"
+
+main_machine_type   = "e2-standard-8"
+worker_machine_type = "e2-standard-8"
+
+main_disk_size_gb   = 350
+worker_disk_size_gb = 30
+
+worker_node_count = 0
+
+main_default_workers = 4
+main_heavy_workers   = 4
+
+worker_default_workers = 0
+worker_heavy_workers   = 0
