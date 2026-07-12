@@ -57,8 +57,8 @@ def load_run_config(run_dir: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def find_latest_run() -> Path:
-    return Path("results/loadtests/latest").resolve()
+def find_latest_run(results_dir: Path) -> Path:
+    return (results_dir / "latest").resolve()
 
 
 def read_csv_rows(path: Path) -> list[dict]:
@@ -228,6 +228,8 @@ def main():
     )
     sweep_dir = Path(args.results_dir) / sweep_name
     sweep_dir.mkdir(parents=True, exist_ok=True)
+    sweep_runs_dir = sweep_dir / "runs"
+    sweep_runs_dir.mkdir(parents=True, exist_ok=True)
 
     rows = []
 
@@ -257,6 +259,8 @@ def main():
                 str(args.monitor_interval_seconds),
                 "--redis-url",
                 args.redis_url,
+                "--results-dir",
+                str(sweep_runs_dir),
             ]
 
             if not args.cleanup_before_run:
@@ -298,6 +302,8 @@ def main():
                 str(args.worker_node_default_workers),
                 "--worker-node-heavy-workers",
                 str(args.worker_node_heavy_workers),
+                "--results-dir",
+                str(sweep_runs_dir),
             ]
 
             if not args.cleanup_before_run:
@@ -308,7 +314,7 @@ def main():
         if result.returncode != 0:
             raise SystemExit(result.returncode)
 
-        run_dir = find_latest_run()
+        run_dir = find_latest_run(sweep_runs_dir)
         analysis = load_analysis(run_dir)
         config = load_run_config(run_dir)
 
