@@ -7,7 +7,10 @@ from pathlib import Path
 from datetime import datetime, timezone
 import shutil
 from benchmark.loadtest_runner.analyze_results import analyze_run
-from benchmark.loadtest_runner.docker_monitor import DockerMonitor
+from benchmark.loadtest_runner.docker_monitor import (
+    DockerMonitor,
+    list_compose_service_containers,
+)
 from benchmark.loadtest_runner.report_generator import generate_report
 from benchmark.loadtest_runner.queue_monitor import QueueMonitor
 from benchmark.loadtest_runner.error_timeline import generate_error_timeline
@@ -28,7 +31,7 @@ def parse_args():
 
     parser.add_argument("--environment", default="local")
     parser.add_argument("--setup", default="unknown")
-    parser.add_argument("--worker-nodes", type=int, default=1)
+    parser.add_argument("--worker-nodes", type=int, default=0)
     parser.add_argument("--workers-per-node", type=int, default=1)
 
     parser.add_argument("--results-dir", default="results/loadtests")
@@ -140,6 +143,24 @@ def main():
     if args.cleanup_before_run:
         print("Cleaning environment before benchmark...")
         cleanup_local_environment()
+
+    default_workers = list_compose_service_containers("worker-default")
+    heavy_workers = list_compose_service_containers("worker-heavy")
+
+    config.update(
+        {
+            "main_node_default_workers": len(default_workers),
+            "main_node_heavy_workers": len(heavy_workers),
+            "worker_node_default_workers": 0,
+            "worker_node_heavy_workers": 0,
+            "default_workers": len(default_workers),
+            "heavy_workers": len(heavy_workers),
+            "total_workers": len(default_workers) + len(heavy_workers),
+            "default_worker_containers": default_workers,
+            "heavy_worker_containers": heavy_workers,
+        }
+    )
+
     run_started_at = datetime.now(timezone.utc)
 
     config["run_started_at"] = run_started_at.isoformat()
@@ -188,8 +209,8 @@ def main():
         since=run_started_at,
         containers=[
             "image-pipeline-api",
-            "image-pipeline-worker-default",
-            "image-pipeline-worker-heavy",
+            *default_workers,
+            *heavy_workers,
             "image-pipeline-redis",
             "image-pipeline-postgres",
             "image-pipeline-minio",

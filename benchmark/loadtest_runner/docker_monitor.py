@@ -9,6 +9,28 @@ from pathlib import Path
 import psutil
 
 
+def list_compose_service_containers(service: str) -> list[str]:
+    result = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "--filter",
+            f"label=com.docker.compose.service={service}",
+            "--format",
+            "{{.Names}}",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    return [
+        name.strip()
+        for name in result.stdout.splitlines()
+        if name.strip()
+    ]
+
+
 class DockerMonitor:
     def __init__(
         self,

@@ -35,14 +35,40 @@ logger = logging.getLogger(__name__)
 
 HEAVY_REPEAT_THRESHOLD = 5
 
+OPERATION_COSTS = {
+    "rotate": 1,
+    "grayscale": 1,
+    "thumbnail": 4,
+    "emboss": 4,
+    "contrast": 4,
+    "edge_detect": 6,
+    "sharpen": 7,
+    "blur": 10,
+}
+
+HEAVY_COST_THRESHOLD = 40
+
 def is_heavy_pipeline(pipeline: list[PipelineStep]) -> bool:
+    total_cost = 0.0
+
     for step in pipeline:
-        repeat = int(step.parameters.get("repeat", 1))
+        operation = step.operation
+        parameters = step.parameters or {}
 
-        if repeat >= HEAVY_REPEAT_THRESHOLD:
-            return True
+        try:
+            repeat = max(1, int(parameters.get("repeat", 1)))
+        except (TypeError, ValueError):
+            repeat = 1
 
-    return False
+        operation_cost = OPERATION_COSTS.get(operation, 1)
+
+        if parameters.get("region") is not None:
+            operation_cost *= 0.2
+
+        total_cost += operation_cost * repeat
+
+    return total_cost >= HEAVY_COST_THRESHOLD
+
 
 def log_event(event: str, **fields) -> None:
     print(json.dumps({"event": event, **fields}, default=str), flush=True)
